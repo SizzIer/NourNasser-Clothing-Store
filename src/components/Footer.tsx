@@ -10,23 +10,23 @@ const Footer = () => {
         <div className="flex justify-center gap-24 text-center mt-12 max-[800px]:flex-col max-[800px]:gap-10">
           <div className="flex flex-col gap-1">
             <h3 className="text-2xl font-bold max-sm:text-xl">Client Service</h3>
-            <p className="text-lg max-sm:text-base">After-sale Service</p>
-            <p className="text-lg max-sm:text-base">Free Insurance</p>
+            <p className="text-lg max-sm:text-base"></p>
+            <p className="text-lg max-sm:text-base"></p>
           </div>
 
           <div className="flex flex-col gap-1">
             <h3 className="text-2xl font-bold max-sm:text-xl">Our Brand</h3>
             <p className="text-lg max-sm:text-base">The Company</p>
-            <p className="text-lg max-sm:text-base">The Excellence</p>
-            <p className="text-lg max-sm:text-base">International Awards</p>
-            <p className="text-lg max-sm:text-base">Our Story</p>
+            <p className="text-lg max-sm:text-base"></p>
+            <p className="text-lg max-sm:text-base"></p>
+            <p className="text-lg max-sm:text-base">Story</p>
           </div>
 
           <div className="flex flex-col gap-1">
-            <h3 className="text-2xl font-bold max-sm:text-xl">Luxury Clothing</h3>
-            <p className="text-lg max-sm:text-base">Special Edition</p>
-            <p className="text-lg max-sm:text-base">Summer Edition</p>
-            <p className="text-lg max-sm:text-base">Unique Collection</p>
+            <h3 className="text-2xl font-bold max-sm:text-xl">Quality Clothing</h3>
+            <p className="text-lg max-sm:text-base"></p>
+            <p className="text-lg max-sm:text-base"></p>
+            <p className="text-lg max-sm:text-base"></p>
           </div>
         </div>
         <div className="flex flex-col gap-8 my-20">

@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        secondaryBrown: "#8A8475",
+        secondaryBrown: "#A78BFA",
       },
     },
   },

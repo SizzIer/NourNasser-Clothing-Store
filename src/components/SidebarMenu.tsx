@@ -54,7 +54,7 @@ const SidebarMenu = ({
               to="/"
               className="text-4xl font-light tracking-[1.08px] max-sm:text-3xl max-[400px]:text-2xl"
             >
-              FASHION
+              Nour Nasser
             </Link>
           </div>
           <div className="flex flex-col items-center gap-1 mt-7">

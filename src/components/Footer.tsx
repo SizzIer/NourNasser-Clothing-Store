@@ -31,8 +31,8 @@ const Footer = () => {
         </div>
         <div className="flex flex-col gap-8 my-20">
           <p className="flex justify-center items-center text-2xl gap-2 max-sm:text-xl">Worldwide / English <HiChevronDown /></p>
-          <h2 className="text-6xl font-light text-center max-sm:text-5xl">FASHION</h2>
-          <p className="text-base text-center max-sm:text-sm">All rights reserved ©2024</p>
+          <h2 className="text-6xl font-light text-center max-sm:text-5xl">Nour Nasser</h2>
+          <p className="text-base text-center max-sm:text-sm">All rights reserved ©2026</p>
           <ul className="flex justify-center items-center gap-7 text-base max-sm:text-sm max-[350px]:flex-col max-[350px]:gap-5">
             <li>Cookie Policy</li>
             <li>Privacy Policy</li>

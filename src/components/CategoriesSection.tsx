@@ -8,22 +8,22 @@ const CategoriesSection = () => {
       </h2>
       <div className="flex justify-between flex-wrap gap-y-10">
         <CategoryItem
-          categoryTitle="Special Edition"
+          categoryTitle="Bottoms"
           image="luxury category 1.png"
           link="special-edition"
         />
         <CategoryItem
-          categoryTitle="Luxury Collection"
+          categoryTitle="Tops"
           image="luxury category 2.png"
           link="Tops"
         />
         <CategoryItem
-          categoryTitle="Summer Edition"
+          categoryTitle="Accessories"
           image="luxury category 3.png"
           link="summer-edition"
         />
         <CategoryItem
-          categoryTitle="Unique Collection"
+          categoryTitle=""
           image="luxury category 4.png"
           link="unique-collection"
         />

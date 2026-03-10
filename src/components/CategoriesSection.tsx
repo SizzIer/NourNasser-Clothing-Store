@@ -10,7 +10,7 @@ const CategoriesSection = () => {
         <CategoryItem
           categoryTitle="Bottoms"
           image="luxury category 1.png"
-          link="special-edition"
+          link="Bottoms"
         />
         <CategoryItem
           categoryTitle="Tops"
@@ -20,12 +20,12 @@ const CategoriesSection = () => {
         <CategoryItem
           categoryTitle="Accessories"
           image="luxury category 3.png"
-          link="summer-edition"
+          link="Accessories"
         />
         <CategoryItem
           categoryTitle=""
           image="luxury category 4.png"
-          link="unique-collection"
+          link=""
         />
       </div>
     </div>

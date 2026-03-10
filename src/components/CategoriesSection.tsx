@@ -15,7 +15,7 @@ const CategoriesSection = () => {
         <CategoryItem
           categoryTitle="Luxury Collection"
           image="luxury category 2.png"
-          link="luxury-collection"
+          link="Tops"
         />
         <CategoryItem
           categoryTitle="Summer Edition"

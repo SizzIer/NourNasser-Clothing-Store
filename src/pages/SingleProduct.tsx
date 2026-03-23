@@ -17,31 +17,39 @@ import toast from "react-hot-toast";
 const SingleProduct = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [singleProduct, setSingleProduct] = useState<Product | null>(null);
-  // defining default values for input fields
   const [size, setSize] = useState<string>("xs");
   const [color, setColor] = useState<string>("black");
   const [quantity, setQuantity] = useState<number>(1);
   const params = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
 
-  // defining HOC instances
   const SelectInputUpgrade = WithSelectInputWrapper(StandardSelectInput);
   const QuantityInputUpgrade = WithNumberInputWrapper(QuantityInput);
 
   useEffect(() => {
     const fetchSingleProduct = async () => {
-      const response = await fetch(
-        `http://localhost:3000/products/${params.id}`
-      );
-      const data = await response.json();
-      setSingleProduct(data);
+      try {
+        const response = await fetch("http://localhost:4000/api/products");
+        const data = await response.json();
+        const foundProduct = data.find(
+          (product: Product) => String(product.id) === String(params.id)
+        );
+        setSingleProduct(foundProduct || null);
+      } catch (error) {
+        console.error("Failed to fetch single product:", error);
+      }
     };
 
     const fetchProducts = async () => {
-      const response = await fetch("http://localhost:3000/products");
-      const data = await response.json();
-      setProducts(data);
+      try {
+        const response = await fetch("http://localhost:4000/api/products");
+        const data = await response.json();
+        setProducts(data);
+      } catch (error) {
+        console.error("Failed to fetch products:", error);
+      }
     };
+
     fetchSingleProduct();
     fetchProducts();
   }, [params.id]);
@@ -82,7 +90,7 @@ const SingleProduct = () => {
               <p className="text-base text-secondaryBrown">
                 {formatCategoryName(singleProduct?.category || "")}
               </p>
-              <p className="text-base font-bold">${ singleProduct?.price }</p>
+              <p className="text-base font-bold">${singleProduct?.price}</p>
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -129,7 +137,6 @@ const SingleProduct = () => {
             </p>
           </div>
           <div>
-            {/* drowdown items */}
             <Dropdown dropdownTitle="Description">
               Lorem ipsum dolor, sit amet consectetur adipisicing elit. Labore
               quos deleniti, mollitia, vitae harum suscipit voluptatem quasi, ab
@@ -154,7 +161,6 @@ const SingleProduct = () => {
         </div>
       </div>
 
-      {/* similar products */}
       <div>
         <h2 className="text-black/90 text-5xl mt-24 mb-12 text-center max-lg:text-4xl">
           Similar Products
@@ -177,4 +183,5 @@ const SingleProduct = () => {
     </div>
   );
 };
+
 export default SingleProduct;

@@ -94,6 +94,7 @@ const SingleProduct = () => {
             </div>
           </div>
           <div className="flex flex-col gap-2">
+            {/* 
             <SelectInputUpgrade
               selectList={[
                 { id: "xs", value: "XS" },
@@ -137,30 +138,23 @@ const SingleProduct = () => {
             </p>
           </div>
           <div>
+            {/* drowdown items */}
             <Dropdown dropdownTitle="Description">
-              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Labore
-              quos deleniti, mollitia, vitae harum suscipit voluptatem quasi, ab
-              assumenda accusantium rem praesentium accusamus quae quam tempore
-              nostrum corporis eaque. Mollitia.
+              Hello
             </Dropdown>
 
             <Dropdown dropdownTitle="Product Details">
-              Lorem ipsum dolor sit amet, consectetur adipisicing elit. Fuga ad
-              at odio illo, necessitatibus, reprehenderit dolore voluptas ea
-              consequuntur ducimus repellat soluta mollitia facere sapiente.
-              Unde provident possimus hic dolore.
+              Hello
             </Dropdown>
 
             <Dropdown dropdownTitle="Delivery Details">
-              Lorem ipsum dolor sit amet, consectetur adipisicing elit. Fuga ad
-              at odio illo, necessitatibus, reprehenderit dolore voluptas ea
-              consequuntur ducimus repellat soluta mollitia facere sapiente.
-              Unde provident possimus hic dolore.
+              Hello
             </Dropdown>
           </div>
         </div>
       </div>
 
+      {/* similar products */}
       <div>
         <h2 className="text-black/90 text-5xl mt-24 mb-12 text-center max-lg:text-4xl">
           Similar Products
@@ -178,9 +172,10 @@ const SingleProduct = () => {
               stock={product?.stock}
             />
           ))}
+         
         </div>
-      </div>
-    </div>
+      </div>  */}
+    </div>  
   );
 };
 

@@ -2,29 +2,19 @@ import {
   Button,
   Dropdown,
   ProductItem,
-  QuantityInput,
-  StandardSelectInput,
 } from "../components";
 import { useParams } from "react-router-dom";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { addProductToTheCart } from "../features/cart/cartSlice";
 import { useAppDispatch } from "../hooks";
-import WithSelectInputWrapper from "../utils/withSelectInputWrapper";
-import WithNumberInputWrapper from "../utils/withNumberInputWrapper";
 import { formatCategoryName } from "../utils/formatCategoryName";
 import toast from "react-hot-toast";
 
 const SingleProduct = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [singleProduct, setSingleProduct] = useState<Product | null>(null);
-  const [size, setSize] = useState<string>("xs");
-  const [color, setColor] = useState<string>("black");
-  const [quantity, setQuantity] = useState<number>(1);
   const params = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
-
-  const SelectInputUpgrade = WithSelectInputWrapper(StandardSelectInput);
-  const QuantityInputUpgrade = WithNumberInputWrapper(QuantityInput);
 
   useEffect(() => {
     const fetchSingleProduct = async () => {
@@ -58,14 +48,14 @@ const SingleProduct = () => {
     if (singleProduct) {
       dispatch(
         addProductToTheCart({
-          id: singleProduct.id + size + color,
+          id: String(singleProduct.id),
           image: singleProduct.image,
           title: singleProduct.title,
           category: singleProduct.category,
           price: singleProduct.price,
-          quantity,
-          size,
-          color,
+          quantity: 1,
+          size: "default",
+          color: "default",
           popularity: singleProduct.popularity,
           stock: singleProduct.stock,
         })
@@ -83,6 +73,7 @@ const SingleProduct = () => {
             alt={singleProduct?.title}
           />
         </div>
+
         <div className="w-full flex flex-col gap-5 mt-9">
           <div className="flex flex-col gap-2">
             <h1 className="text-4xl">{singleProduct?.title}</h1>
@@ -93,89 +84,56 @@ const SingleProduct = () => {
               <p className="text-base font-bold">${singleProduct?.price}</p>
             </div>
           </div>
-          <div className="flex flex-col gap-2">
-            {/* 
-            <SelectInputUpgrade
-              selectList={[
-                { id: "xs", value: "XS" },
-                { id: "sm", value: "SM" },
-                { id: "m", value: "M" },
-                { id: "lg", value: "LG" },
-                { id: "xl", value: "XL" },
-                { id: "2xl", value: "2XL" },
-              ]}
-              value={size}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                setSize(() => e.target.value)
-              }
-            />
-            <SelectInputUpgrade
-              selectList={[
-                { id: "black", value: "BLACK" },
-                { id: "red", value: "RED" },
-                { id: "blue", value: "BLUE" },
-                { id: "white", value: "WHITE" },
-                { id: "rose", value: "ROSE" },
-                { id: "green", value: "GREEN" },
-              ]}
-              value={color}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                setColor(() => e.target.value)
-              }
-            />
 
-            <QuantityInputUpgrade
-              value={quantity}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setQuantity(() => parseInt(e.target.value))
-              }
-            />
-          </div>
           <div className="flex flex-col gap-3">
             <Button mode="brown" text="Add to cart" onClick={handleAddToCart} />
             <p className="text-secondaryBrown text-sm text-right">
               Delivery estimated on the Friday, July 26
             </p>
           </div>
+
           <div>
-            {/* drowdown items */}
             <Dropdown dropdownTitle="Description">
-              Hello
+              This is a stylish product from the Nour Nasser collection.
             </Dropdown>
 
             <Dropdown dropdownTitle="Product Details">
-              Hello
+              Category: {formatCategoryName(singleProduct?.category || "")}
+              <br />
+              In stock: {singleProduct?.stock}
             </Dropdown>
 
             <Dropdown dropdownTitle="Delivery Details">
-              Hello
+              Standard delivery available. Orders are processed in 1–3 business
+              days.
             </Dropdown>
           </div>
         </div>
       </div>
 
-      {/* similar products */}
       <div>
         <h2 className="text-black/90 text-5xl mt-24 mb-12 text-center max-lg:text-4xl">
           Similar Products
         </h2>
         <div className="flex flex-wrap justify-between items-center gap-y-8 mt-12 max-xl:justify-start max-xl:gap-5 ">
-          {products.slice(0, 3).map((product: Product) => (
-            <ProductItem
-              key={product?.id}
-              id={product?.id}
-              image={product?.image}
-              title={product?.title}
-              category={product?.category}
-              price={product?.price}
-              popularity={product?.popularity}
-              stock={product?.stock}
-            />
-          ))}
-         
+          {products
+            .filter((product: Product) => product.id !== singleProduct?.id)
+            .slice(0, 3)
+            .map((product: Product) => (
+              <ProductItem
+                key={product.id}
+                id={product.id}
+                image={product.image}
+                title={product.title}
+                category={product.category}
+                price={product.price}
+                popularity={product.popularity}
+                stock={product.stock}
+              />
+            ))}
         </div>
-      </div>  */}
-    </div>  
+      </div>
+    </div>
   );
 };
 

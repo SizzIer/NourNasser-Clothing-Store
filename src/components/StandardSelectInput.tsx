@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 
 interface ISelectElement {
-  id: number;
+  id: string;
   value: string;
 }
 
@@ -13,7 +13,7 @@ const StandardSelectInput = ({
 }) => {
   return (
     <select
-      className="w-full py-2 border-black/30 border text-black/70 outline-none"
+      className="w-full py-2 border-black/30 border text-black/70 outline-none px-2"
       {...props}
     >
       {selectList &&
@@ -25,4 +25,5 @@ const StandardSelectInput = ({
     </select>
   );
 };
+
 export default StandardSelectInput;

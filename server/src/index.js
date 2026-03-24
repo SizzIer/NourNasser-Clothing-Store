@@ -70,6 +70,7 @@ app.get("/api/products", async (req, res) => {
     const formattedProducts = products.map((product) => ({
       id: product.id,
       title: product.name,
+      description: product.description,
       image: product.imageUrl.replace("/images/", ""),
       category: product.category.toLowerCase(),
       price: product.price,
@@ -82,7 +83,9 @@ app.get("/api/products", async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch products" });
   }
-});app.get("/api/products", async (req, res) => {
+});
+
+app.get("/api/products", async (req, res) => {
   try {
     const products = await prisma.product.findMany();
 

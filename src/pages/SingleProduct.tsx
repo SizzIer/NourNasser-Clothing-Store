@@ -2,6 +2,7 @@ import {
   Button,
   Dropdown,
   ProductItem,
+  StandardSelectInput,
 } from "../components";
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -9,12 +10,16 @@ import { addProductToTheCart } from "../features/cart/cartSlice";
 import { useAppDispatch } from "../hooks";
 import { formatCategoryName } from "../utils/formatCategoryName";
 import toast from "react-hot-toast";
+import WithSelectInputWrapper from "../utils/withSelectInputWrapper";
 
 const SingleProduct = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [singleProduct, setSingleProduct] = useState<Product | null>(null);
+  const [size, setSize] = useState<string>("xs");
   const params = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
+
+  const SelectInputUpgrade = WithSelectInputWrapper(StandardSelectInput);
 
   useEffect(() => {
     const fetchSingleProduct = async () => {
@@ -48,19 +53,20 @@ const SingleProduct = () => {
     if (singleProduct) {
       dispatch(
         addProductToTheCart({
-          id: String(singleProduct.id),
+          id: `${singleProduct.id}-${size}`,
           image: singleProduct.image,
           title: singleProduct.title,
           category: singleProduct.category,
           price: singleProduct.price,
           quantity: 1,
-          size: "default",
+          size,
           color: "default",
           popularity: singleProduct.popularity,
           stock: singleProduct.stock,
+          description: singleProduct.description,
         })
       );
-      toast.success("Product added to the cart");
+      toast.success(`Added size ${size.toUpperCase()} to cart`);
     }
   };
 
@@ -86,6 +92,23 @@ const SingleProduct = () => {
           </div>
 
           <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-sm mb-2 text-black/70">Select size</p>
+              <SelectInputUpgrade
+                selectList={[
+                  { id: "xs", value: "XS" },
+                  { id: "s", value: "S" },
+                  { id: "m", value: "M" },
+                  { id: "l", value: "L" },
+                  { id: "xl", value: "XL" },
+                ]}
+                value={size}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  setSize(e.target.value)
+                }
+              />
+            </div>
+
             <Button mode="brown" text="Add to cart" onClick={handleAddToCart} />
             <p className="text-secondaryBrown text-sm text-right">
               Delivery estimated on the Friday, July 26
@@ -94,13 +117,17 @@ const SingleProduct = () => {
 
           <div>
             <Dropdown dropdownTitle="Description">
-              This is a stylish product from the Nour Nasser collection.
+              {singleProduct?.description || "No description available."}
             </Dropdown>
 
             <Dropdown dropdownTitle="Product Details">
               Category: {formatCategoryName(singleProduct?.category || "")}
               <br />
               In stock: {singleProduct?.stock}
+              <br />
+              Price: ${singleProduct?.price}
+              <br />
+              Selected size: {size.toUpperCase()}
             </Dropdown>
 
             <Dropdown dropdownTitle="Delivery Details">
@@ -122,7 +149,7 @@ const SingleProduct = () => {
             .map((product: Product) => (
               <ProductItem
                 key={product.id}
-                id={product.id}
+                id={String(product.id)}
                 image={product.image}
                 title={product.title}
                 category={product.category}

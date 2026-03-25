@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { HiXMark } from "react-icons/hi2";
 import { Link, useNavigate } from "react-router-dom";
-import { useAppSelector } from "../hooks";
+import { useAppSelector, useShopCategories } from "../hooks";
 import { setLoginStatus } from "../features/auth/authSlice";
 import { store } from "../store";
 
@@ -16,8 +16,12 @@ const SidebarMenu = ({
   const [isAnimating, setIsAnimating] = useState(false);
   const { loginStatus } = useAppSelector((state) => state.auth);
   const navigate = useNavigate();
+  const categories = useShopCategories();
+
+  const closeSidebar = () => setIsSidebarOpen(false);
 
   const logout = () => {
+    closeSidebar();
     toast.error("Logged out successfully");
     localStorage.removeItem("user");
     store.dispatch(setLoginStatus(false));
@@ -46,12 +50,13 @@ const SidebarMenu = ({
           <div className="flex justify-end mr-1 mt-1">
             <HiXMark
               className="text-3xl cursor-pointer"
-              onClick={() => setIsSidebarOpen(false)}
+              onClick={closeSidebar}
             />
           </div>
           <div className="flex justify-center mt-2">
             <Link
               to="/"
+              onClick={closeSidebar}
               className="text-4xl font-light tracking-[1.08px] max-sm:text-3xl max-[400px]:text-2xl"
             >
               Nour Nasser
@@ -60,18 +65,36 @@ const SidebarMenu = ({
           <div className="flex flex-col items-center gap-1 mt-7">
             <Link
               to="/"
+              onClick={closeSidebar}
               className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
             >
               Home
             </Link>
             <Link
               to="/shop"
+              onClick={closeSidebar}
               className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
             >
-              Shop
+              Shop all
             </Link>
+            <p className="w-full text-left text-xs uppercase tracking-wider text-gray-500 px-4 mt-3 mb-1">
+              Categories
+            </p>
+            <div className="w-full flex flex-col gap-0 mb-2">
+              {categories.map((c) => (
+                <Link
+                  key={c.slug}
+                  to={`/shop/${c.slug}`}
+                  onClick={closeSidebar}
+                  className="py-2 pl-6 pr-4 text-left text-sm border-b border-black/5 hover:bg-black/[0.03]"
+                >
+                  {c.name}
+                </Link>
+              ))}
+            </div>
             <Link
               to="/search"
+              onClick={closeSidebar}
               className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
             >
               Search
@@ -89,12 +112,14 @@ const SidebarMenu = ({
               <>
                 <Link
                   to="/login"
+                  onClick={closeSidebar}
                   className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
                 >
                   Sign in
                 </Link>
                 <Link
                   to="/register"
+                  onClick={closeSidebar}
                   className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
                 >
                   Sign up
@@ -103,6 +128,7 @@ const SidebarMenu = ({
             )}
             <Link
               to="/cart"
+              onClick={closeSidebar}
               className="py-2 border-y border-secondaryBrown w-full block flex justify-center"
             >
               Cart

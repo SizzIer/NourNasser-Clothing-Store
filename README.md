@@ -1,4 +1,4 @@
-<h1>Fashion eCommerce Shop in React.js, TypeScript and JSON server</h1>
+<h1>Fashion eCommerce Shop in React.js, TypeScript, Express and Prisma</h1>
 
 <p>Fashion eCommerce template is a custom <b>fashion theme</b> completely designed and created from the ground up. The theme is designed in Figma by following foundational web design practices. <b>The fashion website template</b> was created using React.js best practices and techniques. The fashion website template is mainly a luxury fashion template for women, but it can also be used for men and kids. The fashion website template can also be used for any React eCommerce template or clothing eCommerce website. You can download it for free and test it yourself.</p>
 <p>The following technologies were used in design and development:</p>
@@ -6,7 +6,9 @@
   <li><p>Figma - The leading collaborative design tool for building meaningful products.</p></li>
   <li><p>React.js - Free and open-source front-end JavaScript library for building user interfaces based on components by Facebook Inc.</p></li>
   <li><p>TypeScript - Free and open-source high-level programming language developed by Microsoft that adds static typing with optional type annotations to JavaScript.</p></li>
-  <li><p>JSON server - A lightweight and easy-to-use Node.js tool that simulates a RESTful API using a JSON file as the data source</p></li>
+  <li><p>Express.js - Fast, unopinionated, minimalist web framework for Node.js used for the backend API.</p></li>
+  <li><p>Prisma ORM - Type-safe database toolkit used to model and query application data.</p></li>
+  <li><p>SQLite - Lightweight relational database used for local development and deployment simplicity.</p></li>
   <li><p>Redux Toolkit - The official, opinionated, batteries-included toolset for efficient Redux development</p></li>
   <li><p>Axios - Promise-based HTTP client for the browser and Node.js.</p></li>
   <li><p>React Router - A popular library for routing in React applications</p></li>
@@ -36,7 +38,27 @@
 npm install
 ```
 
-<p>4. After everything is installed you need to write the following command:</p>
+<p>4. Create <code>server/.env</code> (copy <code>server/.env.example</code>) so it contains at least:</p>
+
+```
+DATABASE_URL="file:./dev.db"
+```
+
+<p>5. One command installs server dependencies, generates Prisma Client, applies migrations to SQLite, and runs the seed (safe to re-run):</p>
+
+```
+npm run setup
+```
+
+<p>If you change <code>schema.prisma</code> and need a <em>new</em> migration, use <code>npx --prefix server prisma migrate dev --name your_change_name</code> instead of relying only on <code>setup</code>.</p>
+
+<p>Product images are referenced as files under <code>public/assets/</code> (e.g. <code>product-01.jpg</code>). Add matching images there, or copy from <code>clothingPictures/</code> and rename to match the seed, so cards are not broken.</p>
+
+<p><strong>Grid photos (recommended):</strong> The shop grid uses a <strong>3:4</strong> portrait frame (width:height) with <code>object-cover</code> aligned to the <strong>top</strong>, so images fill the card and the top of the product (e.g. hood/shoulders) stays visible. For best results, use source photos with the same <strong>3:4 aspect ratio</strong> (for example <strong>1200×1600px</strong> or <strong>1500×2000px</strong> JPEG/WebP). If ratios differ, the image is cropped to fit—avoid ultra-wide or ultra-tall shots for grid thumbnails.</p>
+
+<p>Demo login (once your backend exposes <code>GET /users</code>): <code>demo@example.com</code> / <code>demo123</code>.</p>
+
+<p>6. Start both frontend and backend with:</p>
 
 ```
 npm start

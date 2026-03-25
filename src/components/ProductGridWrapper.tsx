@@ -5,11 +5,13 @@ import {
   setShowingProducts,
   setTotalProducts,
 } from "../features/shop/shopSlice";
+import { slugify } from "../utils/slugify";
 
 const ProductGridWrapper = ({
   searchQuery,
   sortCriteria,
   category,
+  subcategory,
   page,
   limit,
   children,
@@ -17,6 +19,7 @@ const ProductGridWrapper = ({
   searchQuery?: string;
   sortCriteria?: string;
   category?: string;
+  subcategory?: string;
   page?: number;
   limit?: number;
   children:
@@ -41,8 +44,17 @@ const ProductGridWrapper = ({
       );
 
       if (category) {
+        const want = slugify(category);
         searchedProducts = searchedProducts.filter((product: Product) => {
-          return product.category === category;
+          const slug = product.categorySlug ?? slugify(product.category);
+          return slug === want;
+        });
+      }
+
+      if (subcategory) {
+        const sub = subcategory.toLowerCase();
+        searchedProducts = searchedProducts.filter((product: Product) => {
+          return (product.subcategory || "").toLowerCase() === sub;
         });
       }
 
@@ -86,12 +98,12 @@ const ProductGridWrapper = ({
         dispatch(setShowingProducts(searchedProducts.length));
       }
     },
-    []
+    [category, subcategory, limit]
   );
 
   useEffect(() => {
     getSearchedProducts(searchQuery || "", sortCriteria || "", page || 1);
-  }, [searchQuery, sortCriteria, page]);
+  }, [searchQuery, sortCriteria, page, category, subcategory, getSearchedProducts]);
 
   // Clone the children and pass the products as props to the children
   // This will cause the children to re-render with the new products

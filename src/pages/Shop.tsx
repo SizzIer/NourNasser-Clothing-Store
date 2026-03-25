@@ -4,22 +4,40 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { ShopBanner, ShopPageContent } from "../components";
+import { useResetPaginationOnReload } from "../hooks";
 
-export const shopCategoryLoader = async ({ params }: LoaderFunctionArgs) => {
-  const { category } = params;
+function pageFromSearchParams(searchParams: URLSearchParams) {
+  const raw = searchParams.get("page");
+  const n = parseInt(raw || "1", 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 
-  return category;
+export const shopCategoryLoader = async ({
+  params,
+  request,
+}: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const subcategory = url.searchParams.get("subcategory") || undefined;
+  return {
+    category: params.category ?? "",
+    subcategory,
+  };
 };
 
 const Shop = () => {
-  const category = useLoaderData() as string;
+  const { category, subcategory } = useLoaderData() as {
+    category: string;
+    subcategory?: string;
+  };
   const [searchParams] = useSearchParams();
+  useResetPaginationOnReload();
   return (
-    <div className="max-w-screen-2xl mx-auto pt-10">
+    <div className="max-w-screen-2xl mx-auto w-full px-5 max-[400px]:px-3 pt-10">
       <ShopBanner category={category} />
       <ShopPageContent
         category={category}
-        page={parseInt(searchParams.get("page") || "1")}
+        subcategory={subcategory}
+        page={pageFromSearchParams(searchParams)}
       />
     </div>
   );

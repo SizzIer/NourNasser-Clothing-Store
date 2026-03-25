@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "concurrently \"npm run dev\" \"json-server --watch src/data/db.json\" ",
+    "server:dev": "npm --prefix server run dev",
+    "setup": "npm --prefix server install && npm --prefix server run prepare-db",
+    "start": "concurrently \"npm run dev\" \"npm run server:dev\"",
     "build": "tsc -b && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
@@ -16,7 +18,6 @@
     "@tailwindcss/forms": "^0.5.7",
     "axios": "^1.7.2",
     "concurrently": "^8.2.2",
-    "json-server": "^1.0.0-beta.1",
     "nanoid": "^5.0.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

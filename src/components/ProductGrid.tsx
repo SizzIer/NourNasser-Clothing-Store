@@ -1,18 +1,17 @@
 import React from "react";
 import ProductItem from "./ProductItem";
-import { nanoid } from "nanoid";
 
 const ProductGrid = ({ products }: { products?: Product[] }) => {
   return (
     <div
       id="gridTop"
-      className="max-w-screen-2xl flex flex-wrap justify-between items-center gap-y-8 mx-auto mt-12 max-xl:justify-start max-xl:gap-5 px-5 max-[400px]:px-3"
+      className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-center gap-x-8 gap-y-12 mt-12"
     >
       {products &&
         products.map((product: Product) => (
           <ProductItem
-            key={nanoid()}
-            id={product.id}
+            key={product.id}
+            id={String(product.id)}
             image={product.image}
             title={product.title}
             category={product.category}

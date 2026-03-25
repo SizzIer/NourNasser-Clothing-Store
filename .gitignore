@@ -8,6 +8,12 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+
+# Local SQLite databases (created by Prisma migrate; do not commit)
+*.db
+server/dev.db
+server/prisma/dev.db
+
 dist
 dist-ssr
 *.local

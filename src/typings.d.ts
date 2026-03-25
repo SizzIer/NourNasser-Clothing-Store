@@ -4,9 +4,18 @@ interface Product {
   description?: string;
   image: string;
   category: string;
+  categorySlug?: string;
+  subcategory?: string | null;
   price: number;
   popularity: number;
   stock: number;
+}
+
+interface ShopCategory {
+  name: string;
+  slug: string;
+  productCount: number;
+  subcategories: string[];
 }
 
 interface ProductInCart extends Product {

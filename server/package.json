@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "db:seed": "prisma db seed",
+    "prepare-db": "prisma generate && prisma migrate deploy && npm run db:seed"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +19,8 @@
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "fashion-ecommerce-shop": "file:.."
   },
   "devDependencies": {
     "nodemon": "^3.1.14",

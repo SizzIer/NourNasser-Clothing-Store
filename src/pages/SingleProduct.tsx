@@ -8,7 +8,8 @@ import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { addProductToTheCart } from "../features/cart/cartSlice";
 import { useAppDispatch } from "../hooks";
-import { formatCategoryName } from "../utils/formatCategoryName";
+import { formatCategorySlug } from "../utils/formatCategoryName";
+import { slugify } from "../utils/slugify";
 import toast from "react-hot-toast";
 import WithSelectInputWrapper from "../utils/withSelectInputWrapper";
 
@@ -49,6 +50,9 @@ const SingleProduct = () => {
     fetchProducts();
   }, [params.id]);
 
+  const productCategoryKey = (p: Product | null) =>
+    p ? p.categorySlug ?? slugify(p.category) : "";
+
   const handleAddToCart = () => {
     if (singleProduct) {
       dispatch(
@@ -85,7 +89,9 @@ const SingleProduct = () => {
             <h1 className="text-4xl">{singleProduct?.title}</h1>
             <div className="flex justify-between items-center">
               <p className="text-base text-secondaryBrown">
-                {formatCategoryName(singleProduct?.category || "")}
+                {singleProduct
+                  ? formatCategorySlug(productCategoryKey(singleProduct))
+                  : ""}
               </p>
               <p className="text-base font-bold">${singleProduct?.price}</p>
             </div>
@@ -121,7 +127,10 @@ const SingleProduct = () => {
             </Dropdown>
 
             <Dropdown dropdownTitle="Product Details">
-              Category: {formatCategoryName(singleProduct?.category || "")}
+              Category:{" "}
+              {singleProduct
+                ? formatCategorySlug(productCategoryKey(singleProduct))
+                : ""}
               <br />
               In stock: {singleProduct?.stock}
               <br />
@@ -142,9 +151,14 @@ const SingleProduct = () => {
         <h2 className="text-black/90 text-5xl mt-24 mb-12 text-center max-lg:text-4xl">
           Similar Products
         </h2>
-        <div className="flex flex-wrap justify-between items-center gap-y-8 mt-12 max-xl:justify-start max-xl:gap-5 ">
+        <div className="mt-12 grid w-full grid-cols-1 justify-items-center gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {products
-            .filter((product: Product) => product.id !== singleProduct?.id)
+            .filter(
+              (product: Product) =>
+                product.id !== singleProduct?.id &&
+                productCategoryKey(product) ===
+                  productCategoryKey(singleProduct)
+            )
             .slice(0, 3)
             .map((product: Product) => (
               <ProductItem

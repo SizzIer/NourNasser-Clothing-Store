@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Button,
   ProductGrid,
@@ -6,18 +5,25 @@ import {
   ShowingSearchPagination,
 } from "../components";
 import { Form, useSearchParams } from "react-router-dom";
+import { useResetPaginationOnReload } from "../hooks";
+
+function pageFromSearchParams(searchParams: URLSearchParams) {
+  const raw = searchParams.get("page");
+  const n = parseInt(raw || "1", 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 
 const Search = () => {
   const [searchParams] = useSearchParams();
-  const [currentPage, setCurrentPage] = useState<number>(
-    parseInt(searchParams.get("page") || "1")
-  );
+  useResetPaginationOnReload();
+  const query = searchParams.get("query") || "";
+  const page = pageFromSearchParams(searchParams);
 
   return (
-    <div className="max-w-screen-2xl mx-auto">
+    <div className="max-w-screen-2xl mx-auto w-full px-5 max-[400px]:px-3">
       <Form
         method="post"
-        className="flex items-center mt-24 px-5 max-[400px]:px-3"
+        className="flex items-center mt-24"
       >
         <input
           type="text"
@@ -30,11 +36,11 @@ const Search = () => {
         </div>
       </Form>
 
-      <ProductGridWrapper searchQuery={searchParams.get("query")!} page={currentPage}>
+      <ProductGridWrapper searchQuery={query} page={page}>
         <ProductGrid />
       </ProductGridWrapper>
 
-      <ShowingSearchPagination page={currentPage} setCurrentPage={setCurrentPage} />
+      <ShowingSearchPagination page={page} />
     </div>
   );
 };

@@ -2,14 +2,21 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parent
 SERVER_DIR = ROOT / "server"
+PREFERRED_BROWSERS = ("chrome", "google-chrome", "windows-default")
 
 
 def resolve_executable(name: str) -> str:
@@ -75,10 +82,64 @@ def setup_database(skip_setup: bool) -> None:
     run_cmd(["npm", "run", "setup"], ROOT)
 
 
-def start_app(start: bool) -> None:
+def try_open_chrome_windows(url: str) -> bool:
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    program_files = os.environ.get("PROGRAMFILES", "")
+    program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "")
+    candidates = [
+        Path(local_app_data) / "Google/Chrome/Application/chrome.exe",
+        Path(program_files) / "Google/Chrome/Application/chrome.exe",
+        Path(program_files_x86) / "Google/Chrome/Application/chrome.exe",
+    ]
+    for exe in candidates:
+        if exe.exists():
+            subprocess.Popen([str(exe), url])
+            print(f"[ok] Opened {url} in Chrome: {exe}")
+            return True
+    return False
+
+
+def open_browser(url: str) -> bool:
+    if sys.platform.startswith("win") and try_open_chrome_windows(url):
+        return True
+
+    for browser_name in PREFERRED_BROWSERS:
+        try:
+            controller = webbrowser.get(browser_name)
+            if controller.open(url):
+                print(f"[ok] Opened {url} in preferred browser: {browser_name}")
+                return True
+        except webbrowser.Error:
+            continue
+    if webbrowser.open(url):
+        print(f"[ok] Opened {url} in default browser.")
+        return True
+    return False
+
+
+def wait_and_open_browser(url: str, timeout_seconds: int = 90) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with urlopen(url, timeout=2):
+                opened = open_browser(url)
+                if opened:
+                    return
+                else:
+                    print("[warn] Could not open browser automatically.")
+                return
+        except (OSError, URLError):
+            time.sleep(1)
+    print(f"[warn] App did not become ready at {url} within {timeout_seconds}s.")
+
+
+def start_app(start: bool, auto_open_browser: bool, app_url: str) -> None:
     if not start:
         print("[done] Setup complete. Start manually with: npm start")
         return
+    if auto_open_browser:
+        opener = threading.Thread(target=wait_and_open_browser, args=(app_url,), daemon=True)
+        opener.start()
     run_cmd(["npm", "start"], ROOT)
 
 
@@ -104,13 +165,27 @@ def main() -> int:
         action="store_true",
         help="Do setup only; do not run npm start.",
     )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not auto-open the app in browser when starting.",
+    )
+    parser.add_argument(
+        "--open-url",
+        default="http://localhost:5173",
+        help="URL to open automatically when app is ready.",
+    )
     args = parser.parse_args()
 
     try:
         ensure_node_modules(force_install=args.force_install)
         ensure_server_env()
         setup_database(skip_setup=args.skip_setup)
-        start_app(start=not args.no_start)
+        start_app(
+            start=not args.no_start,
+            auto_open_browser=not args.no_open,
+            app_url=args.open_url,
+        )
         return 0
     except RuntimeError as err:
         print(f"\n[error] {err}")

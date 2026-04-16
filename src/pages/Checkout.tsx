@@ -451,12 +451,21 @@ const Checkout = () => {
                           <h4 className="text-sm font-medium text-gray-700 hover:text-gray-800">
                             {product?.title}
                           </h4>
-                          <p className="mt-1 text-sm text-gray-500">
-                            {product?.color}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-500">
-                            {product?.size}
-                          </p>
+                          {product?.color &&
+                          product.color.trim() &&
+                          product.color.toLowerCase() !== "default" ? (
+                            <p className="mt-1 text-sm text-gray-500">
+                              {product.color}
+                            </p>
+                          ) : null}
+                          {product?.size ? (
+                            <p className="mt-1 text-sm text-gray-500">
+                              Size{" "}
+                              <span className="font-medium text-gray-700">
+                                {product.size.toUpperCase()}
+                              </span>
+                            </p>
+                          ) : null}
                         </div>
 
                         <div className="ml-4 flow-root flex-shrink-0">

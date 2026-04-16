@@ -1,7 +1,12 @@
 import React from "react";
 import ProductItem from "./ProductItem";
 
-const ProductGrid = ({ products }: { products?: Product[] }) => {
+// Memoize the component to prevent unnecessary re-renders because of React.cloneElement.
+const ProductGrid = React.memo(function ProductGrid({
+  products,
+}: {
+  products?: Product[];
+}) {
   return (
     <div
       id="gridTop"
@@ -22,6 +27,6 @@ const ProductGrid = ({ products }: { products?: Product[] }) => {
         ))}
     </div>
   );
-};
-// Memoize the component to prevent unnecessary re-renders because of React.cloneElement
-export default React.memo(ProductGrid);
+});
+
+export default ProductGrid;

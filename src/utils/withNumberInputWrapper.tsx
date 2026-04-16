@@ -1,12 +1,12 @@
-
-
 interface WithNumberInputWrapperProps {
   value?: number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
-const WithNumberInputWrapper = (Component: any) => {
+const WithNumberInputWrapper = (
+  Component: React.ComponentType<WithNumberInputWrapperProps>
+) => {
   return function (props: WithNumberInputWrapperProps) {
     return <Component {...props} />;
   };

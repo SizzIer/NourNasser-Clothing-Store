@@ -7,8 +7,8 @@ const ProductItem = ({
   title,
   category,
   price,
-  popularity: _popularity,
-  stock: _stock,
+  popularity,
+  stock,
 }: {
   id: string;
   image: string;
@@ -18,6 +18,9 @@ const ProductItem = ({
   popularity: number;
   stock: number;
 }) => {
+  void popularity;
+  void stock;
+
   return (
     <div className="flex w-full min-w-0 max-w-[400px] flex-col gap-2 justify-center">
       <Link

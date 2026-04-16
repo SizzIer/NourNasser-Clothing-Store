@@ -1,19 +1,8 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  LoaderFunctionArgs,
-  useLoaderData,
-  useNavigate,
-} from "react-router-dom";
-import customFetch from "../axios/custom";
+import { useLoaderData, useNavigate } from "react-router-dom";
 import { nanoid } from "nanoid";
 import { formatDate } from "../utils/formatDate";
-
-export const loader = async ({ params }: LoaderFunctionArgs) => {
-  const { id } = params;
-  const response = await customFetch(`orders/${id}`);
-  return response.data;
-};
 
 const SingleOrderHistory = () => {
   const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));

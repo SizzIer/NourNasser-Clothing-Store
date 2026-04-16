@@ -1,0 +1,3 @@
+-- Intentionally left blank.
+-- This migration folder existed but its SQL file was missing.
+-- Keeping it as a no-op preserves historical ordering without duplicating columns.

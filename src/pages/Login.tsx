@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { useEffect } from "react";
 import { setLoginStatus } from "../features/auth/authSlice";
 import { store } from "../store";
+import axios from "axios";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -18,27 +19,19 @@ const Login = () => {
     // Check if form data is valid
     if (!checkLoginFormData(data)) return;
     
-    // Check if user with the email and password exists
-    const users = await customFetch.get("/users");
-    let userId: number = 0; // Initialize userId with a default value
-    const userExists = users.data.some(
-      (user: { id: number; email: string; password: string }) => {
-        if (user.email === data.email) {
-          userId = user.id;
-        }
-        return user.email === data.email && user.password === data.password;
-      }
-    );
-    
-    // if user exists, show success message
-    if (userExists) {
+    try {
+      const response = await customFetch.post("/auth/login", data);
       toast.success("You logged in successfully");
-      localStorage.setItem("user", JSON.stringify({...data, id: userId}));
+      localStorage.setItem("user", JSON.stringify(response.data));
       store.dispatch(setLoginStatus(true));
       navigate("/user-profile");
       return;
-    } else {
-      toast.error("Please enter correct email and password");
+    } catch (error: unknown) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.error as string) ||
+          "Please enter correct email and password"
+        : "Please enter correct email and password";
+      toast.error(message);
     }
   };
 

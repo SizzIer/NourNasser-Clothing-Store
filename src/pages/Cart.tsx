@@ -10,6 +10,7 @@ import {
   updateProductQuantity,
 } from "../features/cart/cartSlice";
 import toast from "react-hot-toast";
+import { baseProductIdFromLineId } from "../utils/slugify";
 
 const Cart = () => {
   const { productsInCart, subtotal } = useAppSelector((state) => state.cart);
@@ -47,18 +48,33 @@ const Cart = () => {
                         <div className="flex justify-between">
                           <h3 className="text-sm">
                             <Link
-                              to={`/product/${product.id}`}
+                              to={`/product/${baseProductIdFromLineId(product.id)}`}
                               className="font-medium text-gray-700 hover:text-gray-800"
                             >
                               {product.title}
                             </Link>
                           </h3>
                         </div>
-                        <div className="mt-1 flex text-sm">
-                          <p className="text-gray-500">{product.color}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm text-gray-500">
                           {product.size ? (
-                            <p className="ml-4 border-l border-gray-200 pl-4 text-gray-500">
-                              {product.size}
+                            <p>
+                              Size{" "}
+                              <span className="font-medium text-gray-700">
+                                {product.size.toUpperCase()}
+                              </span>
+                            </p>
+                          ) : null}
+                          {product.color &&
+                          product.color.trim() &&
+                          product.color.toLowerCase() !== "default" ? (
+                            <p
+                              className={
+                                product.size
+                                  ? "border-l border-gray-200 pl-4"
+                                  : ""
+                              }
+                            >
+                              {product.color}
                             </p>
                           ) : null}
                         </div>

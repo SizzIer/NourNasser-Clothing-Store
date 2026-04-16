@@ -3,6 +3,7 @@ import { Button } from "../components";
 import { checkRegisterFormData } from "../utils/checkRegisterFormData";
 import customFetch from "../axios/custom";
 import toast from "react-hot-toast";
+import axios from "axios";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -15,23 +16,20 @@ const Register = () => {
     // Check if form data is valid
     if (!checkRegisterFormData(data)) return;
 
-    // Check if user with this email already exists
-    const users = await customFetch.get("/users");
-    const userExists = users.data.some(
-      (user: { email: string }) => user.email === data.email
-    );
-    if (userExists) {
-      toast.error("User with this email already exists");
-      return;
-    }
-
-    // Register user
-    const response = await customFetch.post("/users", data);
-    if (response.status === 201) {
-      toast.success("User registered successfully");
-      navigate("/login");
-    } else {
-      toast.error("An error occurred. Please try again");
+    try {
+      const response = await customFetch.post("/auth/register", data);
+      if (response.status === 201) {
+        toast.success("User registered successfully");
+        navigate("/login");
+      } else {
+        toast.error("An error occurred. Please try again");
+      }
+    } catch (error: unknown) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.error as string) ||
+          "An error occurred. Please try again"
+        : "An error occurred. Please try again";
+      toast.error(message);
     }
   };
 
@@ -73,6 +71,16 @@ const Register = () => {
               placeholder="Enter email address"
               id="email"
               name="email"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="phone">Phone number (optional)</label>
+            <input
+              type="tel"
+              className="bg-white border border-black text-xl py-2 px-3 w-full outline-none max-[450px]:text-base"
+              placeholder="Enter phone number"
+              id="phone"
+              name="phone"
             />
           </div>
           <div className="flex flex-col gap-1">

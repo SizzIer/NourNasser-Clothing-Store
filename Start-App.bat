@@ -3,7 +3,7 @@ setlocal
 
 cd /d "%~dp0"
 
-echo Starting NourNasser Clothing Store...
+echo Starting Kind Stitch...
 echo.
 
 where py >nul 2>nul

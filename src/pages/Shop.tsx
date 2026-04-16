@@ -1,5 +1,4 @@
 import {
-  LoaderFunctionArgs,
   useLoaderData,
   useSearchParams,
 } from "react-router-dom";
@@ -11,18 +10,6 @@ function pageFromSearchParams(searchParams: URLSearchParams) {
   const n = parseInt(raw || "1", 10);
   return Number.isFinite(n) && n >= 1 ? n : 1;
 }
-
-export const shopCategoryLoader = async ({
-  params,
-  request,
-}: LoaderFunctionArgs) => {
-  const url = new URL(request.url);
-  const subcategory = url.searchParams.get("subcategory") || undefined;
-  return {
-    category: params.category ?? "",
-    subcategory,
-  };
-};
 
 const Shop = () => {
   const { category, subcategory } = useLoaderData() as {

@@ -98,7 +98,7 @@ const ProductGridWrapper = ({
         dispatch(setShowingProducts(searchedProducts.length));
       }
     },
-    [category, subcategory, limit]
+    [category, subcategory, limit, dispatch, totalProducts]
   );
 
   useEffect(() => {

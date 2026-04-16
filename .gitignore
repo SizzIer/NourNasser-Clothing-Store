@@ -11,6 +11,7 @@ node_modules
 
 # Local SQLite databases (created by Prisma migrate; do not commit)
 *.db
+*.db-journal
 server/dev.db
 server/prisma/dev.db
 

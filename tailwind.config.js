@@ -6,6 +6,9 @@ export default {
       colors: {
         secondaryBrown: "#A78BFA",
       },
+      fontFamily: {
+        brand: ["Outfit", "system-ui", "sans-serif"],
+      },
     },
   },
   plugins: ["@tailwindcss/forms"],

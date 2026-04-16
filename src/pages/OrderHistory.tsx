@@ -1,19 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useLoaderData, useNavigate } from "react-router-dom";
-import customFetch from "../axios/custom";
 import { formatDate } from "../utils/formatDate";
-
-export const loader = async () => {
-  try {
-    const response = await customFetch.get("/orders");
-    
-    return response.data;
-  } catch (error) {
-    console.error("Failed to fetch orders:", error);
-    return [];
-  }
-};
 
 const OrderHistory = () => {
   const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));

@@ -15,9 +15,9 @@ import {
   UserProfile,
 } from "./pages";
 import { checkoutAction, searchAction } from "./actions/index";
-import { shopCategoryLoader } from "./pages/Shop";
-import { loader as orderHistoryLoader } from "./pages/OrderHistory";
-import { loader as singleOrderLoader } from "./pages/SingleOrderHistory";
+import { shopCategoryLoader } from "./loaders/shopCategoryLoader";
+import { orderHistoryLoader } from "./loaders/orderHistoryLoader";
+import { singleOrderHistoryLoader } from "./loaders/singleOrderHistoryLoader";
 
 const router = createBrowserRouter([
   {
@@ -80,7 +80,7 @@ const router = createBrowserRouter([
       {
         path: "order-history/:id",
         element: <SingleOrderHistory />,
-        loader: singleOrderLoader
+        loader: singleOrderHistoryLoader,
       },
     ],
   },

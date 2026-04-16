@@ -33,7 +33,9 @@ const UserProfile = () => {
     const userId = JSON.parse(localStorage.getItem("user") || "{}").id;
     if (userId) {
       try {
-        await customFetch.put(`/users/${userId}`, data);
+        const response = await customFetch.put(`/users/${userId}`, data);
+        setUser(response.data);
+        localStorage.setItem("user", JSON.stringify(response.data));
       } catch (e) {
         toast.error("User update failed");
         return;
@@ -92,15 +94,28 @@ const UserProfile = () => {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="phone">Phone number</label>
+          <input
+            type="tel"
+            className="bg-white border border-black text-xl py-2 px-3 w-full outline-none max-[450px]:text-base"
+            placeholder="Enter phone number"
+            id="phone"
+            name="phone"
+            defaultValue={user?.phone || ""}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="password">New password</label>
           <input
             type="password"
             className="bg-white border border-black text-xl py-2 px-3 w-full outline-none max-[450px]:text-base"
-            placeholder="Enter password"
+            placeholder="Leave blank to keep current password"
             id="password"
             name="password"
-            defaultValue={user?.password}
           />
+          <p className="text-sm text-gray-600">
+            Only fill this in if you want to change your password.
+          </p>
         </div>
         <Button type="submit" text="Update Profile" mode="brown" />
         <Link

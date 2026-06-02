@@ -48,17 +48,33 @@ interface User {
   password?: string;
 }
 
+interface OrderItemProduct {
+  id: number;
+  name: string;
+  price: number;
+  imageUrl: string;
+  category: string;
+}
+
+interface OrderItem {
+  id: number;
+  orderId: number;
+  productId: number;
+  quantity: number;
+  unitPrice: number;
+  size?: string | null;
+  color?: string | null;
+  product: OrderItemProduct;
+}
+
 interface Order {
   id: number;
-  orderStatus: string;
-  orderDate: string;
-  data: {
-    email: string;
-  };
-  products: ProductInCart[];
-  subtotal: number;
-  user: {
-    email: string;
-    id: number;
-  };
+  userId: number | null;
+  status: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  total: number;
+  createdAt: string;
+  items: OrderItem[];
+  user?: User | null;
 }

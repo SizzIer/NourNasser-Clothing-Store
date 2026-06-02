@@ -24,6 +24,7 @@ const OrderHistory = () => {
           <thead>
             <tr>
               <th className="py-3 px-4 border-b">Order ID</th>
+              <th className="py-3 px-4 border-b">Items</th>
               <th className="py-3 px-4 border-b">Date</th>
               <th className="py-3 px-4 border-b">Total</th>
               <th className="py-3 px-4 border-b">Status</th>
@@ -31,15 +32,33 @@ const OrderHistory = () => {
             </tr>
           </thead>
           <tbody>
-            {orders.map((order) => order?.user && order.user.id === user.id && (
+            {orders.map((order) => (
               <tr key={order.id}>
                 <td className="py-3 px-4 border-b text-center">{order.id}</td>
-                <td className="py-3 px-4 border-b text-center">{ formatDate(order.orderDate) }</td>
+                <td className="py-3 px-4 border-b">
+                  <div className="flex items-center gap-1">
+                    {order.items.slice(0, 3).map((item) => (
+                      <img
+                        key={item.id}
+                        src={`/assets/${item.product?.imageUrl?.replace("/images/", "")}`}
+                        alt={item.product?.name}
+                        className="w-10 h-10 object-cover rounded border border-gray-200"
+                        title={item.product?.name}
+                      />
+                    ))}
+                    {order.items.length > 3 && (
+                      <span className="text-xs text-gray-500 ml-1">
+                        +{order.items.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="py-3 px-4 border-b text-center">{formatDate(order.createdAt)}</td>
                 <td className="py-3 px-4 border-b text-center">
-                  ${order.subtotal + 5 + (order.subtotal / 5)}
+                  ${(order.total + 5 + order.total / 5).toFixed(2)}
                 </td>
                 <td className="py-3 px-4 border-b text-center">
-                  { order.orderStatus }
+                  {order.status}
                 </td>
                 <td className="py-3 px-4 border-b text-center">
                   <Link

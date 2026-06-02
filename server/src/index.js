@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import axios from "axios";
 
 dotenv.config();
 
@@ -304,6 +305,300 @@ app.get("/api/products", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+// ========== PayPal Configuration ==========
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+const PAYPAL_API_BASE =
+  process.env.PAYPAL_MODE === "production"
+    ? "https://api.paypal.com"
+    : "https://api.sandbox.paypal.com";
+
+// Get PayPal Access Token
+async function getPayPalAccessToken() {
+  try {
+    const response = await axios.post(
+      `${PAYPAL_API_BASE}/v1/oauth2/token`,
+      "grant_type=client_credentials",
+      {
+        auth: {
+          username: PAYPAL_CLIENT_ID,
+          password: PAYPAL_SECRET,
+        },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+    return response.data.access_token;
+  } catch (error) {
+    console.error("Failed to get PayPal access token:", error.message);
+    throw error;
+  }
+}
+
+// ========== Orders Endpoints ==========
+
+// Create order (both PayPal and other methods)
+app.post("/api/orders", async (req, res) => {
+  try {
+    const { data, products, subtotal, user, orderStatus, orderDate } = req.body;
+
+    if (!data || !products || subtotal === undefined) {
+      return res.status(400).json({ error: "Missing required order data" });
+    }
+
+    const paymentMethod = data.paymentType || "credit-card";
+
+    // Handle PayPal orders
+    if (paymentMethod === "paypal") {
+      // Create order in database with pending payment status
+      const userId = user?.id ? Number(user.id) : null;
+
+      const order = await prisma.order.create({
+        data: {
+          userId: userId,
+          status: orderStatus || "Pending",
+          paymentMethod: "paypal",
+          paymentStatus: "Pending",
+          total: subtotal,
+          items: {
+            create: products.map((product) => ({
+              productId: parseInt(product.id, 10),
+              quantity: product.quantity || 1,
+              unitPrice: product.price || 0,
+              size: product.size || null,
+              color: product.color || null,
+            })),
+          },
+        },
+      });
+
+      // Store order details for later retrieval
+      const orderDetails = {
+        orderId: order.id,
+        customerData: data,
+        products: products,
+        subtotal: subtotal,
+        user: user,
+      };
+
+      return res.status(201).json({
+        success: true,
+        orderId: order.id,
+        message: "Order created, proceed to PayPal",
+        orderDetails: orderDetails,
+      });
+    }
+
+    // Handle other payment methods (credit card, eTransfer)
+    const userId = user?.id ? Number(user.id) : null;
+
+    const order = await prisma.order.create({
+      data: {
+        userId: userId,
+        status: orderStatus || "Pending",
+        paymentMethod: paymentMethod,
+        paymentStatus: "Completed",
+        total: subtotal,
+        items: {
+          create: products.map((product) => ({
+            productId: parseInt(product.id, 10),
+            quantity: product.quantity || 1,
+            unitPrice: product.price || 0,
+            size: product.size || null,
+            color: product.color || null,
+          })),
+        },
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      orderId: order.id,
+      message: "Order created successfully",
+    });
+  } catch (error) {
+    console.error("Order creation error:", error?.message || error);
+    return res.status(500).json({ error: "Failed to create order", details: error?.message });
+  }
+});
+
+// Get order by ID
+app.get("/api/orders/:id", async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    if (Number.isNaN(orderId)) {
+      return res.status(400).json({ error: "Invalid order id" });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        user: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    return res.json(order);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to fetch order" });
+  }
+});
+
+// Get user orders
+app.get("/api/users/:userId/orders", async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (Number.isNaN(userId)) {
+      return res.status(400).json({ error: "Invalid user id" });
+    }
+
+    const orders = await prisma.order.findMany({
+      where: { userId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json(orders);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+// ========== PayPal Specific Endpoints ==========
+
+// Create PayPal payment
+app.post("/api/paypal/create-payment", async (req, res) => {
+  try {
+    const { orderId, subtotal } = req.body;
+
+    if (!orderId || !subtotal) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const accessToken = await getPayPalAccessToken();
+
+    const paymentData = {
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          amount: {
+            currency_code: "USD",
+            value: parseFloat(subtotal).toFixed(2),
+          },
+          description: `Order #${orderId} - Nour Nasser Clothing`,
+          custom_id: orderId.toString(),
+        },
+      ],
+      application_context: {
+        return_url: `${process.env.FRONTEND_URL || "http://localhost:5173"}/order-confirmation?orderId=${orderId}`,
+        cancel_url: `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`,
+        brand_name: "Nour Nasser Clothing",
+        user_action: "PAY_NOW",
+        shipping_preference: "NO_SHIPPING",
+      },
+    };
+
+    const response = await axios.post(
+      `${PAYPAL_API_BASE}/v2/checkout/orders`,
+      paymentData,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    const approvalUrl = response.data.links.find(
+      (link) => link.rel === "approve"
+    )?.href;
+
+    if (!approvalUrl) {
+      return res.status(400).json({ error: "No approval URL from PayPal" });
+    }
+
+    return res.json({
+      paymentId: response.data.id,
+      approvalUrl: approvalUrl,
+    });
+  } catch (error) {
+    const errData = error.response?.data;
+    console.error("PayPal payment creation error:", JSON.stringify(errData || error.message, null, 2));
+    return res.status(500).json({
+      error: "Failed to create PayPal payment",
+      details: errData?.details?.[0]?.description || errData?.message || error.message,
+    });
+  }
+});
+
+// Execute PayPal payment (after user approval)
+app.post("/api/paypal/capture-payment", async (req, res) => {
+  try {
+    const { orderId, paymentId } = req.body;
+
+    if (!orderId || !paymentId) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const accessToken = await getPayPalAccessToken();
+
+    const response = await axios.post(
+      `${PAYPAL_API_BASE}/v2/checkout/orders/${paymentId}/capture`,
+      {},
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (response.data.status === "COMPLETED") {
+      await prisma.order.update({
+        where: { id: orderId },
+        data: {
+          status: "Processing",
+          paymentStatus: "Completed",
+        },
+      });
+
+      return res.json({
+        success: true,
+        message: "Payment captured successfully",
+        orderId: orderId,
+      });
+    } else {
+      return res.status(400).json({
+        error: "Payment capture failed",
+        status: response.data.status,
+      });
+    }
+  } catch (error) {
+    console.error("PayPal capture error:", error.response?.data || error.message);
+    return res.status(500).json({
+      error: "Failed to capture PayPal payment",
+      details: error.response?.data?.message,
+    });
   }
 });
 

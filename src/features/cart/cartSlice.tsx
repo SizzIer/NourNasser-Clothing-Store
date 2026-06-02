@@ -58,6 +58,10 @@ export const cartSlice = createSlice({
       });
       cartSlice.caseReducers.calculateTotalPrice(state);
     },
+    clearCart: (state) => {
+      state.productsInCart = [];
+      state.subtotal = 0;
+    },
     calculateTotalPrice: (state) => {
       state.subtotal = state.productsInCart.reduce(
         (acc, product) => acc + product.price * product.quantity,
@@ -72,6 +76,7 @@ export const {
   removeProductFromTheCart,
   updateProductQuantity,
   calculateTotalPrice,
+  clearCart,
 } = cartSlice.actions;
 
 export default cartSlice.reducer;

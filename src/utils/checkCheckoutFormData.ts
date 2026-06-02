@@ -10,17 +10,11 @@ export const checkCheckoutFormData = (checkoutData: {
   if (checkoutData.data?.address === "") {
     toast.error("Address is required");
     return false;
-  } else if (checkoutData.data?.apartment === "") {
-    toast.error("Apartment is required");
-    return false;
   } else if (checkoutData.data?.cardNumber === "") {
     toast.error("Card number is required");
     return false;
   } else if (checkoutData.data?.city === "") {
     toast.error("City is required");
-    return false;
-  } else if (checkoutData.data?.company === "") {
-    toast.error("Company is required");
     return false;
   } else if (checkoutData.data?.country === "") {
     toast.error("Country is required");

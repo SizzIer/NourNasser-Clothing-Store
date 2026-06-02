@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useLoaderData, useNavigate } from "react-router-dom";
-import { nanoid } from "nanoid";
 import { formatDate } from "../utils/formatDate";
 
 const SingleOrderHistory = () => {
@@ -23,33 +22,45 @@ const SingleOrderHistory = () => {
         <h2 className="text-2xl font-semibold mb-4">
           Order ID: {singleOrder.id}
         </h2>
-        <p className="mb-2">Date: {formatDate(singleOrder.orderDate)}</p>
-        <p className="mb-2">Subtotal: ${ singleOrder.subtotal }</p>
+        <p className="mb-2">Date: {formatDate(singleOrder.createdAt)}</p>
+        <p className="mb-2">Subtotal: ${singleOrder.total.toFixed(2)}</p>
         <p className="mb-2">Shipping: $5</p>
-        <p className="mb-2">Tax: ${ singleOrder.subtotal / 5 }</p>
+        <p className="mb-2">Tax: ${(singleOrder.total / 5).toFixed(2)}</p>
         <p className="mb-2">
           Total: $
-          {(singleOrder.subtotal + 5 + singleOrder.subtotal / 5).toFixed(2)}
+          {(singleOrder.total + 5 + singleOrder.total / 5).toFixed(2)}
         </p>
-        <p className="mb-2">Status: {singleOrder.orderStatus}</p>
+        <p className="mb-2">Status: {singleOrder.status}</p>
         <h3 className="text-xl font-semibold mt-6 mb-4">Items</h3>
         <table className="singleOrder-table min-w-full bg-white border border-gray-200">
           <thead>
             <tr>
-              <th className="py-3 px-4 border-b">Product Name</th>
+              <th className="py-3 px-4 border-b"></th>
+              <th className="py-3 px-4 border-b text-left">Product Name</th>
               <th className="py-3 px-4 border-b">Quantity</th>
               <th className="py-3 px-4 border-b">Price</th>
             </tr>
           </thead>
           <tbody>
-            {singleOrder.products.map((product) => (
-              <tr key={nanoid()}>
-                <td className="py-3 px-4 border-b">{product?.title}</td>
+            {singleOrder.items.map((item) => (
+              <tr key={item.id}>
+                <td className="py-3 px-4 border-b w-20">
+                  <img
+                    src={`/assets/${item.product?.imageUrl?.replace("/images/", "")}`}
+                    alt={item.product?.name}
+                    className="w-16 h-16 object-cover rounded"
+                  />
+                </td>
+                <td className="py-3 px-4 border-b">
+                  <p className="font-medium">{item.product?.name}</p>
+                  {item.color && <p className="text-sm text-gray-500">{item.color}</p>}
+                  {item.size && <p className="text-sm text-gray-500">Size: {item.size.toUpperCase()}</p>}
+                </td>
                 <td className="py-3 px-4 border-b text-center">
-                  {product?.quantity}
+                  {item.quantity}
                 </td>
                 <td className="py-3 px-4 border-b text-right">
-                  ${product?.price.toFixed(2)}
+                  ${item.unitPrice.toFixed(2)}
                 </td>
               </tr>
             ))}

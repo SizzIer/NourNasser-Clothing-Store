@@ -1,34 +1,15 @@
 import { HiTrash as TrashIcon } from "react-icons/hi2";
 import { Button } from "../components";
 import { useAppDispatch, useAppSelector } from "../hooks";
-import { removeProductFromTheCart } from "../features/cart/cartSlice";
+import { removeProductFromTheCart, clearCart } from "../features/cart/cartSlice";
 import customFetch from "../axios/custom";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { checkCheckoutFormData } from "../utils/checkCheckoutFormData";
-
-/*
-address: "Marka Markovic 22"
-apartment: "132"
-cardNumber: "21313"
-city: "Belgrade"
-company: "Bojan Cesnak"
-country: "United States"
-cvc: "122"
-emailAddress: "kuzma@gmail.com"
-expirationDate: "12312"
-firstName: "Aca22"
-lastName: "Kuzma"
-nameOnCard: "Aca JK"
-paymentType: "on"
-phone: "06123123132"
-postalCode: "11080"
-region: "Serbia"
-*/
+import { useState } from "react";
 
 const paymentMethods = [
   { id: "credit-card", title: "Credit card" },
-  { id: "paypal", title: "PayPal" },
   { id: "etransfer", title: "eTransfer" },
 ];
 
@@ -36,9 +17,79 @@ const Checkout = () => {
   const { productsInCart, subtotal } = useAppSelector((state) => state.cart);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const [selectedPayment, setSelectedPayment] = useState("credit-card");
+  const [isLoading, setIsLoading] = useState(false);
+  const [paypalError, setPaypalError] = useState<string | null>(null);
+
+  const handlePayPalClick = async () => {
+    setIsLoading(true);
+    setPaypalError(null);
+
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+      // Create order with minimal data for PayPal
+      const orderPayload = {
+        data: {
+          emailAddress: user.email || "",
+          firstName: user.name?.split(" ")[0] || "Guest",
+          lastName: user.name?.split(" ").slice(1).join(" ") || "User",
+          address: "",
+          apartment: "",
+          city: "",
+          country: "United States",
+          region: "",
+          postalCode: "",
+          phone: user.phone || "",
+          company: "",
+          paymentType: "paypal",
+        },
+        products: productsInCart,
+        subtotal: subtotal,
+        user: user.email ? { email: user.email, id: user.id } : null,
+        orderStatus: "Processing",
+        orderDate: new Date().toISOString(),
+      };
+
+      const response = await customFetch.post("/orders", orderPayload);
+
+      if (response.status === 201) {
+        try {
+          const paymentResponse = await customFetch.post("/paypal/create-payment", {
+            orderId: response.data.orderId,
+            subtotal: subtotal,
+            customerData: orderPayload.data,
+          });
+
+          if (paymentResponse.data.approvalUrl) {
+            dispatch(clearCart());
+            window.location.href = paymentResponse.data.approvalUrl;
+          } else {
+            setPaypalError("Failed to create PayPal payment. Please try again.");
+            setIsLoading(false);
+          }
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.details || error.response?.data?.error || "Failed to process PayPal payment";
+          setPaypalError(errorMsg);
+          toast.error(errorMsg);
+          setIsLoading(false);
+        }
+      } else {
+        setPaypalError("Failed to create order. Please try again.");
+        setIsLoading(false);
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || "An error occurred. Please try again.";
+      setPaypalError(errorMsg);
+      toast.error(errorMsg);
+      setIsLoading(false);
+    }
+  };
 
   const handleCheckoutSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setIsLoading(true);
+
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData);
 
@@ -48,32 +99,37 @@ const Checkout = () => {
       subtotal: subtotal,
     };
 
-    if (!checkCheckoutFormData(checkoutData)) return;
-
-    let response;
-    if (JSON.parse(localStorage.getItem("user") || "{}").email) {
-      response = await customFetch.post("/orders", {
-        ...checkoutData,
-        user: {
-          email: JSON.parse(localStorage.getItem("user") || "{}").email,
-          id: JSON.parse(localStorage.getItem("user") || "{}").id,
-        },
-        orderStatus: "Processing",
-        orderDate: new Date().toISOString(),
-      });
-    } else {
-      response = await customFetch.post("/orders", {
-        ...checkoutData,
-        orderStatus: "Processing",
-        orderDate: new Date().toLocaleDateString(),
-      });
+    if (!checkCheckoutFormData(checkoutData)) {
+      setIsLoading(false);
+      return;
     }
 
-    if (response.status === 201) {
-      toast.success("Order has been placed successfully");
-      navigate("/order-confirmation");
-    } else {
-      toast.error("Something went wrong, please try again later");
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const orderPayload = {
+        ...checkoutData,
+        user: user.email ? { email: user.email, id: user.id } : null,
+        orderStatus: "Processing",
+        orderDate: new Date().toISOString(),
+      };
+
+      const response = await customFetch.post("/orders", orderPayload);
+
+      if (response.status === 201) {
+        // Handle other payment methods
+        dispatch(clearCart());
+        toast.success("Order has been placed successfully");
+        navigate("/order-confirmation", { state: { orderId: response.data.orderId } });
+        setIsLoading(false);
+      } else {
+        toast.error("Something went wrong, please try again later");
+        setIsLoading(false);
+      }
+    } catch (error: any) {
+      const msg = error.response?.data?.details || error.response?.data?.error || "Failed to create order";
+      toast.error(msg);
+      console.error("Checkout error:", error.response?.data || error.message);
+      setIsLoading(false);
     }
   };
 
@@ -82,15 +138,14 @@ const Checkout = () => {
       <div className="pb-24 pt-16 px-5 max-[400px]:px-3">
         <h2 className="sr-only">Checkout</h2>
 
-        <form
-          onSubmit={handleCheckoutSubmit}
-          className="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16"
-        >
+        <div className="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16">
+          {/* Left side: Checkout form */}
           <div>
-            <div>
-              <h2 className="text-lg font-medium text-gray-900">
-                Contact information
-              </h2>
+            <form id="checkout-form" onSubmit={handleCheckoutSubmit}>
+              <div>
+                <h2 className="text-lg font-medium text-gray-900">
+                  Contact information
+                </h2>
 
               <div className="mt-4">
                 <label
@@ -106,7 +161,6 @@ const Checkout = () => {
                     name="emailAddress"
                     autoComplete="email"
                     className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                    required={true}
                   />
                 </div>
               </div>
@@ -161,7 +215,7 @@ const Checkout = () => {
                     htmlFor="company"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Company
+                    Company <span className="text-gray-400 font-normal">(optional)</span>
                   </label>
                   <div className="mt-1">
                     <input
@@ -169,7 +223,6 @@ const Checkout = () => {
                       name="company"
                       id="company"
                       className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
                     />
                   </div>
                 </div>
@@ -198,7 +251,7 @@ const Checkout = () => {
                     htmlFor="apartment"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Apartment, suite, etc.
+                    Apartment, suite, etc. <span className="text-gray-400 font-normal">(optional)</span>
                   </label>
                   <div className="mt-1">
                     <input
@@ -206,7 +259,6 @@ const Checkout = () => {
                       name="apartment"
                       id="apartment"
                       className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
                     />
                   </div>
                 </div>
@@ -318,24 +370,17 @@ const Checkout = () => {
               <fieldset className="mt-4">
                 <legend className="sr-only">Payment type</legend>
                 <div className="space-y-4 sm:flex sm:items-center sm:space-x-10 sm:space-y-0">
-                  {paymentMethods.map((paymentMethod, paymentMethodIdx) => (
+                  {paymentMethods.map((paymentMethod) => (
                     <div key={paymentMethod.id} className="flex items-center">
-                      {paymentMethodIdx === 0 ? (
-                        <input
-                          id={paymentMethod.id}
-                          name="paymentType"
-                          type="radio"
-                          defaultChecked
-                          className="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                      ) : (
-                        <input
-                          id={paymentMethod.id}
-                          name="paymentType"
-                          type="radio"
-                          className="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                      )}
+                      <input
+                        id={paymentMethod.id}
+                        name="paymentType"
+                        type="radio"
+                        value={paymentMethod.id}
+                        checked={selectedPayment === paymentMethod.id}
+                        onChange={(e) => setSelectedPayment(e.target.value)}
+                        className="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
 
                       <label
                         htmlFor={paymentMethod.id}
@@ -348,90 +393,123 @@ const Checkout = () => {
                 </div>
               </fieldset>
 
-              <div className="mt-6 grid grid-cols-4 gap-x-4 gap-y-6">
-                <div className="col-span-4">
-                  <label
-                    htmlFor="card-number"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Card number
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      id="card-number"
-                      name="cardNumber"
-                      autoComplete="cc-number"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
-                    />
+              {/* Credit Card Fields */}
+              {selectedPayment === "credit-card" && (
+                <div className="mt-6 grid grid-cols-4 gap-x-4 gap-y-6">
+                  <div className="col-span-4">
+                    <label
+                      htmlFor="card-number"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Card number
+                    </label>
+                    <div className="mt-1">
+                      <input
+                        type="text"
+                        id="card-number"
+                        name="cardNumber"
+                        autoComplete="cc-number"
+                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
+                        required={true}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="col-span-4">
-                  <label
-                    htmlFor="name-on-card"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Name on card
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      id="name-on-card"
-                      name="nameOnCard"
-                      autoComplete="cc-name"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
-                    />
+                  <div className="col-span-4">
+                    <label
+                      htmlFor="name-on-card"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Name on card
+                    </label>
+                    <div className="mt-1">
+                      <input
+                        type="text"
+                        id="name-on-card"
+                        name="nameOnCard"
+                        autoComplete="cc-name"
+                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
+                        required={true}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="col-span-3">
-                  <label
-                    htmlFor="expiration-date"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Expiration date (MM/YY)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="expirationDate"
-                      id="expiration-date"
-                      autoComplete="cc-exp"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
-                    />
+                  <div className="col-span-3">
+                    <label
+                      htmlFor="expiration-date"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Expiration date (MM/YY)
+                    </label>
+                    <div className="mt-1">
+                      <input
+                        type="text"
+                        name="expirationDate"
+                        id="expiration-date"
+                        autoComplete="cc-exp"
+                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
+                        required={true}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label
-                    htmlFor="cvc"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    CVC
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="cvc"
-                      id="cvc"
-                      autoComplete="csc"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
-                    />
+                  <div>
+                    <label
+                      htmlFor="cvc"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      CVC
+                    </label>
+                    <div className="mt-1">
+                      <input
+                        type="text"
+                        name="cvc"
+                        id="cvc"
+                        autoComplete="csc"
+                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
+                        required={true}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* eTransfer Info */}
+              {selectedPayment === "etransfer" && (
+                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-sm text-green-800">
+                    You will receive eTransfer payment instructions via email after order confirmation.
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
+            </form>
+            </div>
 
-          {/* Order summary */}
+          {/* Right side: Order summary */}
           <div className="mt-10 lg:mt-0">
             <h2 className="text-lg font-medium text-gray-900">Order summary</h2>
 
+            {/* PayPal Button Section */}
+            <div className="mt-4 border border-blue-300 bg-blue-50 p-6 rounded-lg">
+              <h3 className="text-base font-medium text-gray-900 mb-3">Pay with PayPal</h3>
+              <button
+                type="button"
+                onClick={handlePayPalClick}
+                disabled={isLoading || productsInCart.length === 0}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {isLoading ? "Processing..." : "Pay with PayPal"}
+              </button>
+              {paypalError && (
+                <div className="mt-3 p-3 bg-red-100 border border-red-400 rounded text-red-700 text-sm">
+                  <p className="font-medium">Payment Error</p>
+                  <p>{paypalError}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Order Items */}
             <div className="mt-4 border border-gray-200 bg-white shadow-sm">
               <h3 className="sr-only">Items in your cart</h3>
               <ul role="list" className="divide-y divide-gray-200">
@@ -527,11 +605,18 @@ const Checkout = () => {
               </dl>
 
               <div className="border-t border-gray-200 px-4 py-6 sm:px-6">
-                <Button text="Confirm Order" mode="brown" />
+                <button
+                  type="submit"
+                  form="checkout-form"
+                  disabled={isLoading}
+                  className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? "Processing..." : "Confirm Order"}
+                </button>
               </div>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

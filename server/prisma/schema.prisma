@@ -43,14 +43,14 @@ model Product {
 
 model Order {
   id            Int         @id @default(autoincrement())
-  userId        Int
+  userId        Int?
   status        String      @default("Pending")
   paymentMethod String      @default("paypal")
   paymentStatus String      @default("Pending")
   total         Float
   createdAt     DateTime    @default(now())
 
-  user          User        @relation(fields: [userId], references: [id])
+  user          User?       @relation(fields: [userId], references: [id])
   items         OrderItem[]
 }
 

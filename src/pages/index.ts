@@ -11,3 +11,8 @@ export { default as OrderConfirmation } from "./OrderConfirmation";
 export { default as UserProfile } from "./UserProfile";
 export { default as OrderHistory } from "./OrderHistory";
 export { default as SingleOrderHistory } from "./SingleOrderHistory";
+export { default as AdminLayout } from "./admin/AdminLayout";
+export { default as AdminDashboard } from "./admin/AdminDashboard";
+export { default as AdminOrders } from "./admin/AdminOrders";
+export { default as AdminProducts } from "./admin/AdminProducts";
+export { default as AdminCustomers } from "./admin/AdminCustomers";

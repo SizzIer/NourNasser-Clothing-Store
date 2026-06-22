@@ -24,7 +24,11 @@ const Login = () => {
       toast.success("You logged in successfully");
       localStorage.setItem("user", JSON.stringify(response.data));
       store.dispatch(setLoginStatus(true));
-      navigate("/user-profile");
+      if (response.data.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/user-profile");
+      }
       return;
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
@@ -36,10 +40,11 @@ const Login = () => {
   };
 
   useEffect(() => {
-    const user = localStorage.getItem("user");
-    if (user) {
+    const raw = localStorage.getItem("user");
+    if (raw) {
+      const user = JSON.parse(raw);
       toast.success("You are already logged in");
-      navigate("/user-profile");
+      navigate(user.role === "admin" ? "/admin" : "/user-profile");
     }
   }, [navigate]);
 

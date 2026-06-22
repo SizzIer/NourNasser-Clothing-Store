@@ -602,6 +602,211 @@ app.post("/api/paypal/capture-payment", async (req, res) => {
   }
 });
 
+// ========== Admin Middleware ==========
+
+async function requireAdmin(req, res, next) {
+  try {
+    const userId = Number(req.headers["x-admin-id"]);
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    req.adminUser = user;
+    next();
+  } catch (error) {
+    return res.status(500).json({ error: "Auth check failed" });
+  }
+}
+
+// ========== Admin Stats ==========
+
+app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+  try {
+    const [revenueAgg, orderCount, customerCount, productCount] = await Promise.all([
+      prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: "Completed" } }),
+      prisma.order.count(),
+      prisma.user.count({ where: { role: "customer" } }),
+      prisma.product.count(),
+    ]);
+
+    const recentOrders = await prisma.order.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: { user: true, items: true },
+    });
+
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const completedOrders = await prisma.order.findMany({
+      where: { paymentStatus: "Completed", createdAt: { gte: sixMonthsAgo } },
+      select: { total: true, createdAt: true },
+    });
+
+    const monthlyRevenue = {};
+    for (const order of completedOrders) {
+      const d = new Date(order.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthlyRevenue[key] = (monthlyRevenue[key] || 0) + order.total;
+    }
+
+    res.json({
+      totalRevenue: revenueAgg._sum.total || 0,
+      orderCount,
+      customerCount,
+      productCount,
+      recentOrders,
+      monthlyRevenue,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+// ========== Admin Orders ==========
+
+app.get("/api/admin/orders", requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Number(req.query.limit) || 20);
+    const status = req.query.status || undefined;
+    const skip = (page - 1) * limit;
+    const where = status ? { status } : {};
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: { user: true, items: { include: { product: true } } },
+      }),
+      prisma.order.count({ where }),
+    ]);
+
+    res.json({ orders, total, page, limit });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: "Status required" });
+
+    const order = await prisma.order.update({ where: { id: orderId }, data: { status } });
+    res.json(order);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update order status" });
+  }
+});
+
+// ========== Admin Products ==========
+
+app.get("/api/admin/products", requireAdmin, async (req, res) => {
+  try {
+    const products = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
+    res.json(products);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+app.post("/api/admin/products", requireAdmin, async (req, res) => {
+  try {
+    const { name, description, price, imageUrl, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    if (!name || price === undefined || !category) {
+      return res.status(400).json({ error: "name, price, and category are required" });
+    }
+    const product = await prisma.product.create({
+      data: {
+        name,
+        description: description || "",
+        price: Number(price),
+        imageUrl: imageUrl || "",
+        category,
+        subcategory: subcategory || null,
+        stock: Number(stock) || 0,
+        fabric: fabric || null,
+        composition: composition ? JSON.stringify(composition) : null,
+        careInstructions: careInstructions || null,
+        colors: colors ? JSON.stringify(colors) : null,
+      },
+    });
+    res.status(201).json(product);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create product" });
+  }
+});
+
+app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+    const { name, description, price, imageUrl, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (price !== undefined) data.price = Number(price);
+    if (imageUrl !== undefined) data.imageUrl = imageUrl;
+    if (category !== undefined) data.category = category;
+    if (subcategory !== undefined) data.subcategory = subcategory || null;
+    if (stock !== undefined) data.stock = Number(stock);
+    if (fabric !== undefined) data.fabric = fabric || null;
+    if (composition !== undefined) data.composition = composition ? JSON.stringify(composition) : null;
+    if (careInstructions !== undefined) data.careInstructions = careInstructions || null;
+    if (colors !== undefined) data.colors = colors ? JSON.stringify(colors) : null;
+
+    const product = await prisma.product.update({ where: { id: productId }, data });
+    res.json(product);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update product" });
+  }
+});
+
+app.delete("/api/admin/products/:id", requireAdmin, async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+    await prisma.product.delete({ where: { id: productId } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+// ========== Admin Customers ==========
+
+app.get("/api/admin/customers", requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { orders: true } } },
+    });
+    res.json(
+      users.map((u) => ({
+        ...toPublicUser(u),
+        orderCount: u._count.orders,
+        createdAt: u.createdAt,
+      }))
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch customers" });
+  }
+});
+
+// ========== End Admin ==========
+
 const PORT = 4000;
 
 app.listen(PORT, () => {

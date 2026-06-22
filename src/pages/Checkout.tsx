@@ -6,7 +6,8 @@ import customFetch from "../axios/custom";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { checkCheckoutFormData } from "../utils/checkCheckoutFormData";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 const paymentMethods = [
   { id: "credit-card", title: "Credit card" },
@@ -19,72 +20,7 @@ const Checkout = () => {
   const navigate = useNavigate();
   const [selectedPayment, setSelectedPayment] = useState("credit-card");
   const [isLoading, setIsLoading] = useState(false);
-  const [paypalError, setPaypalError] = useState<string | null>(null);
-
-  const handlePayPalClick = async () => {
-    setIsLoading(true);
-    setPaypalError(null);
-
-    try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
-
-      // Create order with minimal data for PayPal
-      const orderPayload = {
-        data: {
-          emailAddress: user.email || "",
-          firstName: user.name?.split(" ")[0] || "Guest",
-          lastName: user.name?.split(" ").slice(1).join(" ") || "User",
-          address: "",
-          apartment: "",
-          city: "",
-          country: "United States",
-          region: "",
-          postalCode: "",
-          phone: user.phone || "",
-          company: "",
-          paymentType: "paypal",
-        },
-        products: productsInCart,
-        subtotal: subtotal,
-        user: user.email ? { email: user.email, id: user.id } : null,
-        orderStatus: "Processing",
-        orderDate: new Date().toISOString(),
-      };
-
-      const response = await customFetch.post("/orders", orderPayload);
-
-      if (response.status === 201) {
-        try {
-          const paymentResponse = await customFetch.post("/paypal/create-payment", {
-            orderId: response.data.orderId,
-            subtotal: subtotal,
-            customerData: orderPayload.data,
-          });
-
-          if (paymentResponse.data.approvalUrl) {
-            dispatch(clearCart());
-            window.location.href = paymentResponse.data.approvalUrl;
-          } else {
-            setPaypalError("Failed to create PayPal payment. Please try again.");
-            setIsLoading(false);
-          }
-        } catch (error: any) {
-          const errorMsg = error.response?.data?.details || error.response?.data?.error || "Failed to process PayPal payment";
-          setPaypalError(errorMsg);
-          toast.error(errorMsg);
-          setIsLoading(false);
-        }
-      } else {
-        setPaypalError("Failed to create order. Please try again.");
-        setIsLoading(false);
-      }
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.error || "An error occurred. Please try again.";
-      setPaypalError(errorMsg);
-      toast.error(errorMsg);
-      setIsLoading(false);
-    }
-  };
+  const dbOrderIdRef = useRef<number | null>(null);
 
   const handleCheckoutSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -493,19 +429,50 @@ const Checkout = () => {
             {/* PayPal Button Section */}
             <div className="mt-4 border border-blue-300 bg-blue-50 p-6 rounded-lg">
               <h3 className="text-base font-medium text-gray-900 mb-3">Pay with PayPal</h3>
-              <button
-                type="button"
-                onClick={handlePayPalClick}
-                disabled={isLoading || productsInCart.length === 0}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-              >
-                {isLoading ? "Processing..." : "Pay with PayPal"}
-              </button>
-              {paypalError && (
-                <div className="mt-3 p-3 bg-red-100 border border-red-400 rounded text-red-700 text-sm">
-                  <p className="font-medium">Payment Error</p>
-                  <p>{paypalError}</p>
-                </div>
+              {productsInCart.length > 0 ? (
+                <PayPalScriptProvider options={{ clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID }}>
+                  <PayPalButtons
+                    style={{ layout: "vertical", label: "pay" }}
+                    createOrder={async () => {
+                      const user = JSON.parse(localStorage.getItem("user") || "{}");
+                      const dbRes = await customFetch.post("/orders", {
+                        data: {
+                          emailAddress: user.email || "",
+                          firstName: user.name?.split(" ")[0] || "Guest",
+                          lastName: user.name?.split(" ").slice(1).join(" ") || "User",
+                          address: "", apartment: "", city: "",
+                          country: "United States", region: "", postalCode: "",
+                          phone: user.phone || "", company: "",
+                          paymentType: "paypal",
+                        },
+                        products: productsInCart,
+                        subtotal,
+                        user: user.email ? { email: user.email, id: user.id } : null,
+                        orderStatus: "Processing",
+                        orderDate: new Date().toISOString(),
+                      });
+                      dbOrderIdRef.current = dbRes.data.orderId;
+                      const ppRes = await customFetch.post("/paypal/create-payment", {
+                        orderId: dbRes.data.orderId,
+                        subtotal,
+                      });
+                      return ppRes.data.paymentId;
+                    }}
+                    onApprove={async (data) => {
+                      await customFetch.post("/paypal/capture-payment", {
+                        orderId: dbOrderIdRef.current,
+                        paymentId: data.orderID,
+                      });
+                      dispatch(clearCart());
+                      navigate("/order-confirmation", { state: { orderId: dbOrderIdRef.current } });
+                    }}
+                    onError={() => {
+                      toast.error("PayPal payment failed. Please try again.");
+                    }}
+                  />
+                </PayPalScriptProvider>
+              ) : (
+                <p className="text-sm text-gray-500">Add items to your cart to pay with PayPal.</p>
               )}
             </div>
 

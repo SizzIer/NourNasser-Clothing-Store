@@ -311,6 +311,29 @@ async function main() {
     console.log("Demo user already present, skipping user seed.");
   }
 
+  const adminEmail = "admin123@gmail.com";
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existingAdmin) {
+    const hashedPassword = await bcrypt.hash("Admin23", 10);
+    await prisma.user.create({
+      data: {
+        name: "Admin",
+        email: adminEmail,
+        password: hashedPassword,
+        role: "admin",
+      },
+    });
+    console.log(`Seeded admin user: ${adminEmail}`);
+  } else if (existingAdmin.role !== "admin") {
+    await prisma.user.update({
+      where: { email: adminEmail },
+      data: { role: "admin" },
+    });
+    console.log(`Updated ${adminEmail} to admin role.`);
+  } else {
+    console.log("Admin user already present, skipping admin seed.");
+  }
+
   await prisma.product.updateMany({
     where: { name: "Oversized Hoodie" },
     data: { name: "Essential Hoodie" },

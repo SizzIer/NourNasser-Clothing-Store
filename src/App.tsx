@@ -1,5 +1,10 @@
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import {
+  AdminCustomers,
+  AdminDashboard,
+  AdminLayout,
+  AdminOrders,
+  AdminProducts,
   Cart,
   Checkout,
   HomeLayout,
@@ -20,6 +25,16 @@ import { orderHistoryLoader } from "./loaders/orderHistoryLoader";
 import { singleOrderHistoryLoader } from "./loaders/singleOrderHistoryLoader";
 
 const router = createBrowserRouter([
+  {
+    path: "/admin",
+    element: <AdminLayout />,
+    children: [
+      { index: true, element: <AdminDashboard /> },
+      { path: "orders", element: <AdminOrders /> },
+      { path: "products", element: <AdminProducts /> },
+      { path: "customers", element: <AdminCustomers /> },
+    ],
+  },
   {
     path: "/",
     element: <HomeLayout />,

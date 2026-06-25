@@ -11,12 +11,12 @@ import {
   FiLogOut,
 } from "react-icons/fi";
 
-// const NAV_ITEMS = [
-//   { to: "/admin", label: "Dashboard", icon: FiGrid, end: true },
-//   { to: "/admin/orders", label: "Orders", icon: FiShoppingBag, end: false },
-//   { to: "/admin/products", label: "Products", icon: FiBox, end: false },
-//   { to: "/admin/customers", label: "Customers", icon: FiUsers, end: false },
-// ];
+ const NAV_ITEMS = [
+  { to: "/admin", label: "Dashboard", icon: FiGrid, end: true },
+   { to: "/admin/orders", label: "Orders", icon: FiShoppingBag, end: false },
+   { to: "/admin/products", label: "Products", icon: FiBox, end: false },
+   { to: "/admin/customers", label: "Customers", icon: FiUsers, end: false },
+ ];
 
 const AdminLayout = () => {
   const navigate = useNavigate();
@@ -49,7 +49,7 @@ const AdminLayout = () => {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-        {/* {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+         {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -66,7 +66,7 @@ const AdminLayout = () => {
             <Icon size={16} />
             {label}
           </NavLink>
-        ))} */}
+        ))} 
       </nav>
 
       {/* Footer */}

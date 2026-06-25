@@ -199,6 +199,135 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const INPUT =
   "w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-800 outline-none focus:border-[#A78BFA] focus:ring-1 focus:ring-[#A78BFA] transition-colors placeholder:text-gray-300";
 
-const AdminProducts = () => null;
+const AdminProducts = () => {
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalProduct, setModalProduct] = useState<AdminProduct | null | undefined>(undefined);
+
+  const fetchProducts = useCallback(() => {
+    setLoading(true);
+    adminFetch
+      .get<AdminProduct[]>("/products")
+      .then((res) => setProducts(res.data))
+      .catch(() => toast.error("Failed to load products"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  const handleSave = async (data: ProductFormData) => {
+    try {
+      if (modalProduct) {
+        await adminFetch.put(`/products/${modalProduct.id}`, data);
+        toast.success("Product updated");
+      } else {
+        await adminFetch.post("/products", data);
+        toast.success("Product created");
+      }
+      setModalProduct(undefined);
+      fetchProducts();
+    } catch {
+      toast.error("Failed to save product");
+    }
+  };
+
+  const handleDelete = async (product: AdminProduct) => {
+    if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) return;
+    try {
+      await adminFetch.delete(`/products/${product.id}`);
+      toast.success("Product deleted");
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+    } catch {
+      toast.error("Failed to delete product");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">Products</h2>
+        <button
+          onClick={() => setModalProduct(null)}
+          className="flex items-center gap-2 px-4 py-2 bg-[#0f0f0f] text-white text-sm font-semibold uppercase tracking-wider rounded hover:bg-gray-800 transition-colors"
+        >
+          <FiPlus size={16} />
+          New Product
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+        {loading ? (
+          <p className="text-sm text-gray-400 p-6">Loading products…</p>
+        ) : products.length === 0 ? (
+          <p className="text-sm text-gray-400 p-6">No products yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 uppercase tracking-wider bg-gray-50">
+                  <th className="py-3 px-4">Product</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Price</th>
+                  <th className="py-3 px-4">Stock</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id} className="border-t border-gray-100">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        {product.imageUrl && (
+                          <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="w-10 h-10 object-cover rounded border border-gray-200"
+                          />
+                        )}
+                        <span className="font-medium text-gray-800">{product.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-gray-600">
+                      {product.category}
+                      {product.subcategory ? ` / ${product.subcategory}` : ""}
+                    </td>
+                    <td className="py-3 px-4 text-gray-600">${product.price.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-gray-600">{product.stock}</td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setModalProduct(product)}
+                          className="p-1.5 text-gray-400 hover:text-[#A78BFA]"
+                        >
+                          <FiEdit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(product)}
+                          className="p-1.5 text-gray-400 hover:text-red-500"
+                        >
+                          <FiTrash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {modalProduct !== undefined && (
+        <ProductModal
+          product={modalProduct}
+          onClose={() => setModalProduct(undefined)}
+          onSave={handleSave}
+        />
+      )}
+    </div>
+  );
+};
 
 export default AdminProducts;

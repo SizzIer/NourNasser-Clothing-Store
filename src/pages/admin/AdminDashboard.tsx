@@ -66,6 +66,117 @@ function RevenueChart({ data }: { data: Record<string, number> }) {
   );
 }
 
-const AdminDashboard = () => null;
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: typeof FiDollarSign;
+}) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-lg p-6 flex items-center gap-4">
+      <div className="w-11 h-11 rounded-full bg-[#A78BFA]/10 flex items-center justify-center text-[#A78BFA] shrink-0">
+        <Icon size={20} />
+      </div>
+      <div>
+        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-xl font-bold text-gray-800">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+const AdminDashboard = () => {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    adminFetch
+      .get<DashboardStats>("/stats")
+      .then((res) => {
+        if (active) setStats(res.data);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (loading) {
+    return <p className="text-sm text-gray-400">Loading dashboard…</p>;
+  }
+
+  if (!stats) {
+    return <p className="text-sm text-red-500">Failed to load dashboard stats.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Total Revenue" value={`$${stats.totalRevenue.toFixed(2)}`} icon={FiDollarSign} />
+        <StatCard label="Orders" value={String(stats.orderCount)} icon={FiShoppingBag} />
+        <StatCard label="Customers" value={String(stats.customerCount)} icon={FiUsers} />
+        <StatCard label="Products" value={String(stats.productCount)} icon={FiBox} />
+      </div>
+
+      <RevenueChart data={stats.monthlyRevenue} />
+
+      <div className="bg-white border border-gray-100 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wider">Recent Orders</h3>
+          <Link
+            to="/admin/orders"
+            className="text-xs font-medium text-[#A78BFA] flex items-center gap-1 hover:underline"
+          >
+            View all <FiArrowRight size={12} />
+          </Link>
+        </div>
+        {stats.recentOrders.length === 0 ? (
+          <p className="text-gray-400 text-sm">No orders yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 uppercase tracking-wider">
+                  <th className="py-2 pr-4">Order</th>
+                  <th className="py-2 pr-4">Customer</th>
+                  <th className="py-2 pr-4">Items</th>
+                  <th className="py-2 pr-4">Total</th>
+                  <th className="py-2 pr-4">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recentOrders.map((order) => (
+                  <tr key={order.id} className="border-t border-gray-100">
+                    <td className="py-3 pr-4 font-medium text-gray-800">#{order.id}</td>
+                    <td className="py-3 pr-4 text-gray-600">
+                      {order.user ? `${order.user.name} (${order.user.email})` : "Guest"}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600">{order.items.length}</td>
+                    <td className="py-3 pr-4 text-gray-600">${order.total.toFixed(2)}</td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          STATUS_STYLES[order.status] || "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {order.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default AdminDashboard;

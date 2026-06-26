@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "db:seed": "prisma db seed",
-    "prepare-db": "prisma generate && prisma migrate deploy && npm run db:seed"
+    "prepare-db": "node scripts/prepare-db.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

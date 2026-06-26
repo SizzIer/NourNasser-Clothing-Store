@@ -74,6 +74,17 @@ interface Order {
   paymentMethod: string;
   paymentStatus: string;
   total: number;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  address?: string | null;
+  apartment?: string | null;
+  city?: string | null;
+  country?: string | null;
+  region?: string | null;
+  postalCode?: string | null;
   createdAt: string;
   items: OrderItem[];
   user?: User | null;

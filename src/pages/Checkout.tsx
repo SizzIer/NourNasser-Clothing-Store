@@ -4,14 +4,162 @@ import { removeProductFromTheCart, clearCart } from "../features/cart/cartSlice"
 import customFetch from "../axios/custom";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { checkCheckoutFormData } from "../utils/checkCheckoutFormData";
-import { useState, useRef } from "react";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import { checkCheckoutFormData, validatePayPalCheckout } from "../utils/checkCheckoutFormData";
+import {
+  CHECKOUT_REQUIRED_MESSAGE,
+  checkoutFieldClass,
+  checkoutLabelClass,
+  readCheckoutFormData,
+  scrollToFirstInvalidField,
+  type CheckoutFieldName,
+} from "../utils/checkoutCustomer";
+import { calculateOrderTotal, calculateTax, FLAT_SHIPPING } from "../utils/orderTotals";
+import { useState, useRef, useEffect } from "react";
+import { flushSync } from "react-dom";
+import axios from "axios";
+import { PayPalScriptProvider, PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 
 const paymentMethods = [
   { id: "credit-card", title: "Credit card" },
   { id: "etransfer", title: "eTransfer" },
 ];
+
+const paypalClientId = import.meta.env.VITE_PAYPAL_CLIENT_ID as string | undefined;
+const isPayPalClientIdMissing = !paypalClientId?.trim();
+const isPayPalClientIdPlaceholder =
+  !!paypalClientId &&
+  (paypalClientId.includes("your-paypal") || paypalClientId.includes("replace-with"));
+
+type PayPalOrderButtonsProps = {
+  productsInCart: ProductInCart[];
+  subtotal: number;
+  dbOrderIdRef: React.MutableRefObject<number | null>;
+  onSuccess: (orderId: number) => void;
+  onValidationFailed: (fields: CheckoutFieldName[], message?: string) => void;
+  skipPayPalErrorToastRef: React.MutableRefObject<boolean>;
+};
+
+function CheckoutLabel({
+  htmlFor,
+  fieldName,
+  invalidFields,
+  children,
+  required = true,
+}: {
+  htmlFor: string;
+  fieldName: string;
+  invalidFields: Set<string>;
+  children: React.ReactNode;
+  required?: boolean;
+}) {
+  return (
+    <label htmlFor={htmlFor} className={checkoutLabelClass(fieldName, invalidFields)}>
+      {children}
+      {required ? (
+        <span className="text-red-600" aria-hidden="true">
+          {" "}
+          *
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
+function PayPalOrderButtons({
+  productsInCart,
+  subtotal,
+  dbOrderIdRef,
+  onSuccess,
+  onValidationFailed,
+  skipPayPalErrorToastRef,
+}: PayPalOrderButtonsProps) {
+  const [{ isPending, isRejected }] = usePayPalScriptReducer();
+
+  if (isPending) {
+    return <p className="text-sm text-gray-600">Loading PayPal button...</p>;
+  }
+
+  if (isRejected) {
+    return (
+      <p className="text-sm text-red-600">
+        PayPal failed to load. Check VITE_PAYPAL_CLIENT_ID in the project root .env (must match your
+        sandbox app), restart the dev server, and ensure paypal.com is not blocked.
+      </p>
+    );
+  }
+
+  return (
+    <PayPalButtons
+      style={{ layout: "vertical", label: "pay" }}
+      createOrder={async () => {
+        try {
+          const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+          const form = readCheckoutFormData();
+          const validation = validatePayPalCheckout(form, storedUser, productsInCart, subtotal);
+          if (!validation.valid || !validation.customer) {
+            skipPayPalErrorToastRef.current = true;
+            onValidationFailed(validation.invalidFields, validation.message);
+            throw new Error("Checkout form is incomplete");
+          }
+          const customer = validation.customer;
+
+          const dbRes = await customFetch.post("/orders", {
+            data: {
+              ...customer,
+              paymentType: "paypal",
+            },
+            products: productsInCart,
+            subtotal,
+            user: storedUser.email ? { email: storedUser.email, id: storedUser.id } : null,
+            orderStatus: "Processing",
+            orderDate: new Date().toISOString(),
+          });
+          dbOrderIdRef.current = dbRes.data.orderId;
+          const ppRes = await customFetch.post("/paypal/create-payment", {
+            orderId: dbRes.data.orderId,
+          });
+          if (!ppRes.data.paymentId) {
+            throw new Error("No PayPal payment id returned");
+          }
+          return ppRes.data.paymentId;
+        } catch (error) {
+          if (error instanceof Error && error.message === "Checkout form is incomplete") {
+            throw error;
+          }
+          const message = axios.isAxiosError(error)
+            ? (error.response?.data?.error as string) ||
+              (error.response?.data?.details as string) ||
+              "Could not start PayPal checkout"
+            : "Could not start PayPal checkout";
+          toast.error(message);
+          throw error;
+        }
+      }}
+      onApprove={async (data) => {
+        try {
+          await customFetch.post("/paypal/capture-payment", {
+            orderId: dbOrderIdRef.current,
+            paymentId: data.orderID,
+          });
+          onSuccess(dbOrderIdRef.current!);
+        } catch (error) {
+          const message = axios.isAxiosError(error)
+            ? (error.response?.data?.error as string) || "PayPal payment capture failed"
+            : "PayPal payment capture failed";
+          toast.error(message);
+          throw error;
+        }
+      }}
+      onError={() => {
+        if (skipPayPalErrorToastRef.current) {
+          skipPayPalErrorToastRef.current = false;
+          return;
+        }
+        toast.error("PayPal payment failed. Please try again.");
+      }}
+    />
+  );
+}
 
 const Checkout = () => {
   const { productsInCart, subtotal } = useAppSelector((state) => state.cart);
@@ -19,7 +167,47 @@ const Checkout = () => {
   const navigate = useNavigate();
   const [selectedPayment, setSelectedPayment] = useState("credit-card");
   const [isLoading, setIsLoading] = useState(false);
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
+  const [validationMessage, setValidationMessage] = useState("");
   const dbOrderIdRef = useRef<number | null>(null);
+  const skipPayPalErrorToastRef = useRef(false);
+
+  const showValidationErrors = (fields: CheckoutFieldName[], message?: string) => {
+    const resolvedMessage = message || CHECKOUT_REQUIRED_MESSAGE;
+    flushSync(() => {
+      setInvalidFields(new Set(fields));
+      setValidationMessage(resolvedMessage);
+    });
+    scrollToFirstInvalidField(fields);
+  };
+
+  useEffect(() => {
+    const raw = localStorage.getItem("user");
+    if (!raw) return;
+    const user = JSON.parse(raw) as Partial<User>;
+    const form = document.getElementById("checkout-form") as HTMLFormElement | null;
+    if (!form) return;
+
+    const prefill = (name: string, value?: string | null) => {
+      if (!value) return;
+      const field = form.elements.namedItem(name) as HTMLInputElement | null;
+      if (field && !field.value.trim()) field.value = value;
+    };
+
+    prefill("emailAddress", user.email);
+    prefill("firstName", user.name);
+    prefill("lastName", user.lastname);
+    prefill("phone", user.phone ?? null);
+  }, []);
+
+  const clearFieldError = (fieldName: string) => {
+    setInvalidFields((prev) => {
+      if (!prev.has(fieldName)) return prev;
+      const next = new Set(prev);
+      next.delete(fieldName);
+      return next;
+    });
+  };
 
   const handleCheckoutSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -34,13 +222,22 @@ const Checkout = () => {
       subtotal: subtotal,
     };
 
-    if (!checkCheckoutFormData(checkoutData)) {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const validation = checkCheckoutFormData(
+      { data, products: productsInCart, subtotal },
+      user
+    );
+
+    if (!validation.valid) {
+      showValidationErrors(validation.invalidFields, validation.message);
       setIsLoading(false);
       return;
     }
 
+    setInvalidFields(new Set());
+    setValidationMessage("");
+
     try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
       const orderPayload = {
         ...checkoutData,
         user: user.email ? { email: user.email, id: user.id } : null,
@@ -76,26 +273,42 @@ const Checkout = () => {
         <div className="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16">
           {/* Left side: Checkout form */}
           <div>
-            <form id="checkout-form" onSubmit={handleCheckoutSubmit}>
+            <form
+              id="checkout-form"
+              onSubmit={handleCheckoutSubmit}
+              onInput={(e) => {
+                const name = (e.target as HTMLInputElement | HTMLSelectElement).name;
+                if (name) clearFieldError(name);
+              }}
+            >
+              {validationMessage ? (
+                <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                  {validationMessage}
+                </p>
+              ) : null}
+              <p className="mb-6 text-sm text-gray-500">
+                Fields marked with <span className="text-red-600">*</span> are required.
+              </p>
               <div>
                 <h2 className="text-lg font-medium text-gray-900">
                   Contact information
                 </h2>
 
               <div className="mt-4">
-                <label
+                <CheckoutLabel
                   htmlFor="email-address"
-                  className="block text-sm font-medium text-gray-700"
+                  fieldName="emailAddress"
+                  invalidFields={invalidFields}
                 >
                   Email address
-                </label>
+                </CheckoutLabel>
                 <div className="mt-1">
                   <input
                     type="email"
                     id="email-address"
                     name="emailAddress"
                     autoComplete="email"
-                    className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
+                    className={checkoutFieldClass("emailAddress", invalidFields)}
                   />
                 </div>
               </div>
@@ -108,39 +321,39 @@ const Checkout = () => {
 
               <div className="mt-4 grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-4">
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="first-name"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="firstName"
+                    invalidFields={invalidFields}
                   >
                     First name
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       id="first-name"
                       name="firstName"
                       autoComplete="given-name"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("firstName", invalidFields)}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="last-name"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="lastName"
+                    invalidFields={invalidFields}
                   >
                     Last name
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       id="last-name"
                       name="lastName"
                       autoComplete="family-name"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("lastName", invalidFields)}
                     />
                   </div>
                 </div>
@@ -163,20 +376,20 @@ const Checkout = () => {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label
+                  <CheckoutLabel
                     htmlFor="address"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="address"
+                    invalidFields={invalidFields}
                   >
                     Address
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       name="address"
                       id="address"
                       autoComplete="street-address"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("address", invalidFields)}
                     />
                   </div>
                 </div>
@@ -199,38 +412,38 @@ const Checkout = () => {
                 </div>
 
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="city"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="city"
+                    invalidFields={invalidFields}
                   >
                     City
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       name="city"
                       id="city"
                       autoComplete="address-level2"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("city", invalidFields)}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="country"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="country"
+                    invalidFields={invalidFields}
                   >
                     Country
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <select
                       id="country"
                       name="country"
                       autoComplete="country-name"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("country", invalidFields)}
                     >
                       <option>United States</option>
                       <option>Canada</option>
@@ -240,58 +453,58 @@ const Checkout = () => {
                 </div>
 
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="region"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="region"
+                    invalidFields={invalidFields}
                   >
                     State / Province
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       name="region"
                       id="region"
                       autoComplete="address-level1"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("region", invalidFields)}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label
+                  <CheckoutLabel
                     htmlFor="postal-code"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="postalCode"
+                    invalidFields={invalidFields}
                   >
                     Postal code
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       name="postalCode"
                       id="postal-code"
                       autoComplete="postal-code"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("postalCode", invalidFields)}
                     />
                   </div>
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label
+                  <CheckoutLabel
                     htmlFor="phone"
-                    className="block text-sm font-medium text-gray-700"
+                    fieldName="phone"
+                    invalidFields={invalidFields}
                   >
                     Phone
-                  </label>
+                  </CheckoutLabel>
                   <div className="mt-1">
                     <input
                       type="text"
                       name="phone"
                       id="phone"
                       autoComplete="tel"
-                      className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                      required={true}
+                      className={checkoutFieldClass("phone", invalidFields)}
                     />
                   </div>
                 </div>
@@ -332,77 +545,78 @@ const Checkout = () => {
               {selectedPayment === "credit-card" && (
                 <div className="mt-6 grid grid-cols-4 gap-x-4 gap-y-6">
                   <div className="col-span-4">
-                    <label
+                    <CheckoutLabel
                       htmlFor="card-number"
-                      className="block text-sm font-medium text-gray-700"
+                      fieldName="cardNumber"
+                      invalidFields={invalidFields}
                     >
                       Card number
-                    </label>
+                    </CheckoutLabel>
                     <div className="mt-1">
                       <input
                         type="text"
                         id="card-number"
                         name="cardNumber"
                         autoComplete="cc-number"
-                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                        required={true}
+                        className={checkoutFieldClass("cardNumber", invalidFields)}
                       />
                     </div>
                   </div>
 
                   <div className="col-span-4">
-                    <label
+                    <CheckoutLabel
                       htmlFor="name-on-card"
-                      className="block text-sm font-medium text-gray-700"
+                      fieldName="nameOnCard"
+                      invalidFields={invalidFields}
                     >
                       Name on card
-                    </label>
+                    </CheckoutLabel>
                     <div className="mt-1">
                       <input
                         type="text"
                         id="name-on-card"
                         name="nameOnCard"
                         autoComplete="cc-name"
-                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                        required={true}
+                        className={checkoutFieldClass("nameOnCard", invalidFields)}
                       />
                     </div>
                   </div>
 
                   <div className="col-span-3">
-                    <label
+                    <CheckoutLabel
                       htmlFor="expiration-date"
-                      className="block text-sm font-medium text-gray-700"
+                      fieldName="expirationDate"
+                      invalidFields={invalidFields}
                     >
                       Expiration date (MM/YY)
-                    </label>
+                    </CheckoutLabel>
                     <div className="mt-1">
                       <input
                         type="text"
                         name="expirationDate"
                         id="expiration-date"
                         autoComplete="cc-exp"
-                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                        required={true}
+                        placeholder="MM/YY"
+                        className={checkoutFieldClass("expirationDate", invalidFields)}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label
+                    <CheckoutLabel
                       htmlFor="cvc"
-                      className="block text-sm font-medium text-gray-700"
+                      fieldName="cvc"
+                      invalidFields={invalidFields}
                     >
                       CVC
-                    </label>
+                    </CheckoutLabel>
                     <div className="mt-1">
                       <input
                         type="text"
                         name="cvc"
                         id="cvc"
                         autoComplete="csc"
-                        className="block w-full py-2 indent-2 border-gray-300 outline-none focus:border-gray-400 border border shadow-sm sm:text-sm"
-                        required={true}
+                        className={checkoutFieldClass("cvc", invalidFields)}
                       />
                     </div>
                   </div>
@@ -426,52 +640,35 @@ const Checkout = () => {
             <h2 className="text-lg font-medium text-gray-900">Order summary</h2>
 
             {/* PayPal Button Section */}
-            <div className="mt-4 border border-blue-300 bg-blue-50 p-6 rounded-lg">
+            <div className="paypal-checkout-host mt-4 border border-blue-300 bg-blue-50 p-6 rounded-lg">
               <h3 className="text-base font-medium text-gray-900 mb-3">Pay with PayPal</h3>
-              {!import.meta.env.VITE_PAYPAL_CLIENT_ID ? (
+              {isPayPalClientIdMissing ? (
                 <p className="text-sm text-red-600">
                   PayPal is not configured: missing VITE_PAYPAL_CLIENT_ID. Copy .env.example to .env at the
                   project root and fill in your PayPal sandbox client ID, then restart the dev server.
                 </p>
+              ) : isPayPalClientIdPlaceholder ? (
+                <p className="text-sm text-red-600">
+                  PayPal is not configured: VITE_PAYPAL_CLIENT_ID in the project root .env is still a placeholder.
+                  Use the same sandbox Client ID as PAYPAL_CLIENT_ID in server/.env, then restart the dev server.
+                </p>
               ) : productsInCart.length > 0 ? (
-                <PayPalScriptProvider options={{ clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID }}>
-                  <PayPalButtons
-                    style={{ layout: "vertical", label: "pay" }}
-                    createOrder={async () => {
-                      const user = JSON.parse(localStorage.getItem("user") || "{}");
-                      const dbRes = await customFetch.post("/orders", {
-                        data: {
-                          emailAddress: user.email || "",
-                          firstName: user.name?.split(" ")[0] || "Guest",
-                          lastName: user.name?.split(" ").slice(1).join(" ") || "User",
-                          address: "", apartment: "", city: "",
-                          country: "United States", region: "", postalCode: "",
-                          phone: user.phone || "", company: "",
-                          paymentType: "paypal",
-                        },
-                        products: productsInCart,
-                        subtotal,
-                        user: user.email ? { email: user.email, id: user.id } : null,
-                        orderStatus: "Processing",
-                        orderDate: new Date().toISOString(),
-                      });
-                      dbOrderIdRef.current = dbRes.data.orderId;
-                      const ppRes = await customFetch.post("/paypal/create-payment", {
-                        orderId: dbRes.data.orderId,
-                        subtotal,
-                      });
-                      return ppRes.data.paymentId;
-                    }}
-                    onApprove={async (data) => {
-                      await customFetch.post("/paypal/capture-payment", {
-                        orderId: dbOrderIdRef.current,
-                        paymentId: data.orderID,
-                      });
+                <PayPalScriptProvider
+                  options={{
+                    clientId: paypalClientId!,
+                    currency: "USD",
+                    intent: "capture",
+                  }}
+                >
+                  <PayPalOrderButtons
+                    productsInCart={productsInCart}
+                    subtotal={subtotal}
+                    dbOrderIdRef={dbOrderIdRef}
+                    onValidationFailed={showValidationErrors}
+                    skipPayPalErrorToastRef={skipPayPalErrorToastRef}
+                    onSuccess={(orderId) => {
                       dispatch(clearCart());
-                      navigate("/order-confirmation", { state: { orderId: dbOrderIdRef.current } });
-                    }}
-                    onError={() => {
-                      toast.error("PayPal payment failed. Please try again.");
+                      navigate("/order-confirmation", { state: { orderId } });
                     }}
                   />
                 </PayPalScriptProvider>
@@ -558,19 +755,19 @@ const Checkout = () => {
                 <div className="flex items-center justify-between">
                   <dt className="text-sm">Shipping</dt>
                   <dd className="text-sm font-medium text-gray-900">
-                    ${subtotal ? 5 : 0}
+                    ${subtotal ? FLAT_SHIPPING.toFixed(2) : 0}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between">
                   <dt className="text-sm">Taxes</dt>
                   <dd className="text-sm font-medium text-gray-900">
-                    ${subtotal ? subtotal / 5 : 0}
+                    ${subtotal ? calculateTax(subtotal).toFixed(2) : 0}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between border-t border-gray-200 pt-6">
                   <dt className="text-base font-medium">Total</dt>
                   <dd className="text-base font-medium text-gray-900">
-                    ${subtotal ? subtotal + 5 + subtotal / 5 : 0}
+                    ${subtotal ? calculateOrderTotal(subtotal).toFixed(2) : 0}
                   </dd>
                 </div>
               </dl>

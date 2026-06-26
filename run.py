@@ -59,20 +59,22 @@ def ensure_node_modules(force_install: bool) -> None:
         print("[ok] Server dependencies already installed.")
 
 
-def ensure_server_env() -> None:
-    env_file = SERVER_DIR / ".env"
-    env_example = SERVER_DIR / ".env.example"
-
+def ensure_env_file(env_file: Path, env_example: Path, label: str) -> None:
     if env_file.exists():
-        print("[ok] server/.env already exists.")
+        print(f"[ok] {label} already exists.")
         return
 
     if not env_example.exists():
-        print("[warn] server/.env is missing and no .env.example was found.")
+        print(f"[warn] {label} is missing and no {env_example.name} was found.")
         return
 
     shutil.copyfile(env_example, env_file)
-    print("[ok] Copied server/.env.example -> server/.env")
+    print(f"[ok] Copied {env_example.name} -> {label}")
+
+
+def ensure_env_files() -> None:
+    ensure_env_file(ROOT / ".env", ROOT / ".env.example", ".env")
+    ensure_env_file(SERVER_DIR / ".env", SERVER_DIR / ".env.example", "server/.env")
 
 
 def setup_database(skip_setup: bool) -> None:
@@ -146,7 +148,7 @@ def start_app(start: bool, auto_open_browser: bool, app_url: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Bootstrap and run the app: install deps, ensure server/.env, "
+            "Bootstrap and run the app: install deps, ensure .env files, "
             "prepare DB, then start dev servers."
         )
     )
@@ -179,7 +181,7 @@ def main() -> int:
 
     try:
         ensure_node_modules(force_install=args.force_install)
-        ensure_server_env()
+        ensure_env_files()
         setup_database(skip_setup=args.skip_setup)
         start_app(
             start=not args.no_start,

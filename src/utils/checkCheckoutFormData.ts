@@ -1,61 +1,83 @@
-import toast from "react-hot-toast";
+import {
+  buildCustomerPayload,
+  buildCheckoutValidationMessage,
+  CHECKOUT_EMPTY_CART_MESSAGE,
+  validateCardFields,
+  validateContactFields,
+  type CheckoutCustomerPayload,
+  type CheckoutFieldName,
+} from "./checkoutCustomer";
 
-export const checkCheckoutFormData = (checkoutData: {
-  data: {
-    [k: string]: FormDataEntryValue;
+export type CheckoutValidationResult = {
+  valid: boolean;
+  invalidFields: CheckoutFieldName[];
+  message: string;
+  customer?: CheckoutCustomerPayload;
+};
+
+function mergeValidation(
+  contact: ReturnType<typeof validateContactFields>,
+  card?: ReturnType<typeof validateCardFields>
+): Pick<CheckoutValidationResult, "invalidFields" | "message"> {
+  const invalidFields = [...contact.invalidFields, ...(card?.invalidFields ?? [])];
+  const missingFields = [...contact.missingFields, ...(card?.missingFields ?? [])];
+  const formatFields = [...contact.formatFields, ...(card?.formatFields ?? [])];
+
+  return {
+    invalidFields,
+    message: buildCheckoutValidationMessage(missingFields, formatFields),
   };
-  products: ProductInCart[];
-  subtotal: number;
-}) => {
-  if (checkoutData.data?.address === "") {
-    toast.error("Address is required");
-    return false;
-  } else if (checkoutData.data?.cardNumber === "") {
-    toast.error("Card number is required");
-    return false;
-  } else if (checkoutData.data?.city === "") {
-    toast.error("City is required");
-    return false;
-  } else if (checkoutData.data?.country === "") {
-    toast.error("Country is required");
-    return false;
-  } else if (checkoutData.data?.cvc === "") {
-    toast.error("CVC is required");
-    return false;
-  } else if (checkoutData.data?.emailAddress === "") {
-    toast.error("Email address is required");
-    return false;
-  } else if (checkoutData.data?.expirationDate === "") {
-    toast.error("Expiration date is required");
-    return false;
-  } else if (checkoutData.data?.firstName === "") {
-    toast.error("First name is required");
-    return false;
-  } else if (checkoutData.data?.lastName === "") {
-    toast.error("Last name is required");
-    return false;
-  } else if (checkoutData.data?.nameOnCard === "") {
-    toast.error("Name on card is required");
-    return false;
-  } else if (checkoutData.data?.paymentType === "") {
-    toast.error("Payment type is required");
-    return false;
-  } else if (checkoutData.data?.phone === "") {
-    toast.error("Phone is required");
-    return false;
-  } else if (checkoutData.data?.postalCode === "") {
-    toast.error("Postal code is required");
-    return false;
-  } else if (checkoutData.data?.region === "") {
-    toast.error("Region is required");
-    return false;
-  } else if (checkoutData?.products.length === 0) {
-    toast.error("Products are required");
-    return false;
-  } else if (checkoutData?.subtotal === 0) {
-    toast.error("Subtotal is required");
-    return false;
+}
+
+export const checkCheckoutFormData = (
+  checkoutData: {
+    data: {
+      [k: string]: FormDataEntryValue;
+    };
+    products: ProductInCart[];
+    subtotal: number;
+  },
+  storedUser?: Partial<User> | null
+): CheckoutValidationResult => {
+  const customer = buildCustomerPayload(checkoutData.data, storedUser);
+
+  if (checkoutData?.products.length === 0 || checkoutData?.subtotal === 0) {
+    return { valid: false, invalidFields: [], message: CHECKOUT_EMPTY_CART_MESSAGE, customer };
   }
 
-  return true;
+  const contact = validateContactFields(checkoutData.data, storedUser);
+  const card =
+    checkoutData.data?.paymentType === "credit-card"
+      ? validateCardFields(checkoutData.data)
+      : undefined;
+  const { invalidFields, message } = mergeValidation(contact, card);
+
+  return {
+    valid: invalidFields.length === 0,
+    invalidFields,
+    message,
+    customer,
+  };
 };
+
+export function validatePayPalCheckout(
+  form: Record<string, FormDataEntryValue>,
+  storedUser?: Partial<User> | null,
+  productsInCart: ProductInCart[] = [],
+  subtotal = 0
+): CheckoutValidationResult {
+  const customer = buildCustomerPayload({ ...form, paymentType: "paypal" }, storedUser);
+
+  if (productsInCart.length === 0 || subtotal === 0) {
+    return { valid: false, invalidFields: [], message: CHECKOUT_EMPTY_CART_MESSAGE, customer };
+  }
+
+  const { invalidFields, message } = validateContactFields(form, storedUser);
+
+  return {
+    valid: invalidFields.length === 0,
+    invalidFields,
+    message,
+    customer,
+  };
+}

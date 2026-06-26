@@ -57,7 +57,7 @@ const SidebarMenu = ({
           <button
             type="button"
             aria-label="Close menu"
-            className={`fixed inset-0 z-[45] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 ease-out ${
+            className={`fixed inset-0 z-[105] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 ease-out ${
               isSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
             }`}
             onClick={closeSidebar}
@@ -65,8 +65,8 @@ const SidebarMenu = ({
           <aside
             className={
               isSidebarOpen
-                ? "fixed top-0 left-0 z-50 flex h-full w-[min(20rem,92vw)] flex-col bg-white shadow-[4px_0_24px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out translate-x-0"
-                : "fixed top-0 left-0 z-50 flex h-full w-[min(20rem,92vw)] flex-col bg-white shadow-[4px_0_24px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out -translate-x-full"
+                ? "fixed top-0 left-0 z-[110] flex h-full w-[min(20rem,92vw)] flex-col bg-white shadow-[4px_0_24px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out translate-x-0"
+                : "fixed top-0 left-0 z-[110] flex h-full w-[min(20rem,92vw)] flex-col bg-white shadow-[4px_0_24px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out -translate-x-full"
             }
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-black/[0.06] px-4 pb-4 pt-5">

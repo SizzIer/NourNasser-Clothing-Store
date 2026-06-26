@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useLoaderData, useNavigate } from "react-router-dom";
 import { formatDate } from "../utils/formatDate";
+import { calculateOrderTotal } from "../utils/orderTotals";
 
 const OrderHistory = () => {
   const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
@@ -55,7 +56,7 @@ const OrderHistory = () => {
                 </td>
                 <td className="py-3 px-4 border-b text-center">{formatDate(order.createdAt)}</td>
                 <td className="py-3 px-4 border-b text-center">
-                  ${(order.total + 5 + order.total / 5).toFixed(2)}
+                  ${calculateOrderTotal(order.total).toFixed(2)}
                 </td>
                 <td className="py-3 px-4 border-b text-center">
                   {order.status}

@@ -346,78 +346,252 @@ async function getPayPalAccessToken() {
 
 // ========== Orders Endpoints ==========
 
+/** Prices and totals from SQLite — never trust cart amounts sent by the browser. */
+async function resolveCartLineItems(products) {
+  if (!Array.isArray(products) || products.length === 0) {
+    throw new Error("Cart is empty");
+  }
+
+  const productIds = products.map((p) => parseInt(p.id, 10));
+  const dbProducts = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+  });
+  const dbById = new Map(dbProducts.map((p) => [p.id, p]));
+
+  const items = [];
+  let total = 0;
+
+  for (const cartItem of products) {
+    const productId = parseInt(cartItem.id, 10);
+    const dbProduct = dbById.get(productId);
+    if (!dbProduct) {
+      throw new Error(`Product ${productId} not found`);
+    }
+    const quantity = Math.max(1, parseInt(cartItem.quantity, 10) || 1);
+    const unitPrice = dbProduct.price;
+    total += unitPrice * quantity;
+    items.push({
+      productId,
+      quantity,
+      unitPrice,
+      size: cartItem.size || null,
+      color: cartItem.color || null,
+    });
+  }
+
+  return { items, total: Math.round(total * 100) / 100 };
+}
+
+function resolveOrderUserId(user) {
+  if (user?.id == null || user.id === "") return null;
+  const userId = Number(user.id);
+  return Number.isNaN(userId) ? null : userId;
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidPhone(phone) {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+function isValidPostalCode(code) {
+  return (
+    code.length >= 3 &&
+    code.length <= 12 &&
+    /^[A-Za-z0-9][A-Za-z0-9\s-]*$/.test(code)
+  );
+}
+
+function isValidName(name) {
+  return name.length >= 2;
+}
+
+function isValidAddressLine(line) {
+  return line.length >= 3;
+}
+
+function isValidCardNumber(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length >= 13 && digits.length <= 19;
+}
+
+function isValidExpirationDate(value) {
+  return /^(0[1-9]|1[0-2])\/\d{2}$/.test(String(value ?? "").trim());
+}
+
+function isValidCvc(value) {
+  return /^\d{3,4}$/.test(String(value ?? "").trim());
+}
+
+function assertFormat(value, label, isValid) {
+  if (!isValid(value)) {
+    throw new Error(`Please enter a valid ${label.toLowerCase()}`);
+  }
+}
+
+function validateCardData(data) {
+  const cardNumber = String(data?.cardNumber ?? "").trim();
+  const nameOnCard = String(data?.nameOnCard ?? "").trim();
+  const expirationDate = String(data?.expirationDate ?? "").trim();
+  const cvc = String(data?.cvc ?? "").trim();
+
+  const required = [
+    [cardNumber, "Card number"],
+    [nameOnCard, "Name on card"],
+    [expirationDate, "Expiration date"],
+    [cvc, "CVC"],
+  ];
+
+  for (const [value, label] of required) {
+    if (!value) {
+      throw new Error(`${label} is required`);
+    }
+  }
+
+  assertFormat(cardNumber, "card number", isValidCardNumber);
+  assertFormat(nameOnCard, "name on card", isValidName);
+  assertFormat(expirationDate, "expiration date (MM/YY)", isValidExpirationDate);
+  assertFormat(cvc, "CVC", isValidCvc);
+}
+
+function validateAndNormalizeCustomerData(data) {
+  const email = String(data?.emailAddress ?? "").trim().toLowerCase();
+  const firstName = String(data?.firstName ?? "").trim();
+  const lastName = String(data?.lastName ?? "").trim();
+  const phone = String(data?.phone ?? "").trim();
+  const address = String(data?.address ?? "").trim();
+  const city = String(data?.city ?? "").trim();
+  const country = String(data?.country ?? "").trim();
+  const region = String(data?.region ?? "").trim();
+  const postalCode = String(data?.postalCode ?? "").trim();
+
+  const required = [
+    [email, "Email address"],
+    [firstName, "First name"],
+    [lastName, "Last name"],
+    [phone, "Phone"],
+    [address, "Address"],
+    [city, "City"],
+    [country, "Country"],
+    [region, "Region"],
+    [postalCode, "Postal code"],
+  ];
+
+  for (const [value, label] of required) {
+    if (!value) {
+      throw new Error(`${label} is required`);
+    }
+  }
+
+  assertFormat(email, "email address", isValidEmail);
+  assertFormat(firstName, "first name", isValidName);
+  assertFormat(lastName, "last name", isValidName);
+  assertFormat(phone, "phone number", isValidPhone);
+  assertFormat(address, "address", isValidAddressLine);
+  assertFormat(city, "city", isValidName);
+  assertFormat(region, "region", isValidName);
+  assertFormat(postalCode, "postal code", isValidPostalCode);
+
+  return {
+    email,
+    firstName,
+    lastName,
+    phone,
+    company: String(data?.company ?? "").trim() || null,
+    address,
+    apartment: String(data?.apartment ?? "").trim() || null,
+    city,
+    country,
+    region,
+    postalCode,
+  };
+}
+
+function buildOrderCreateData({ userId, orderStatus, paymentMethod, paymentStatus, total, lineItems, customer }) {
+  return {
+    userId,
+    status: orderStatus || "Pending",
+    paymentMethod,
+    paymentStatus,
+    total,
+    ...customer,
+    items: { create: lineItems.items },
+  };
+}
+
 // Create order (both PayPal and other methods)
 app.post("/api/orders", async (req, res) => {
   try {
-    const { data, products, subtotal, user, orderStatus, orderDate } = req.body;
+    const { data, products, user, orderStatus } = req.body;
 
-    if (!data || !products || subtotal === undefined) {
+    if (!data || !products) {
       return res.status(400).json({ error: "Missing required order data" });
+    }
+
+    let lineItems;
+    try {
+      lineItems = await resolveCartLineItems(products);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    let customer;
+    try {
+      customer = validateAndNormalizeCustomerData(data);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
     }
 
     const paymentMethod = data.paymentType || "credit-card";
 
+    if (paymentMethod === "credit-card") {
+      try {
+        validateCardData(data);
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }
+
     // Handle PayPal orders
     if (paymentMethod === "paypal") {
-      // Create order in database with pending payment status
-      const userId = user?.id ? Number(user.id) : null;
+      const userId = resolveOrderUserId(user);
 
       const order = await prisma.order.create({
-        data: {
-          userId: userId,
-          status: orderStatus || "Pending",
+        data: buildOrderCreateData({
+          userId,
+          orderStatus,
           paymentMethod: "paypal",
           paymentStatus: "Pending",
-          total: subtotal,
-          items: {
-            create: products.map((product) => ({
-              productId: parseInt(product.id, 10),
-              quantity: product.quantity || 1,
-              unitPrice: product.price || 0,
-              size: product.size || null,
-              color: product.color || null,
-            })),
-          },
-        },
+          total: lineItems.total,
+          lineItems,
+          customer,
+        }),
       });
-
-      // Store order details for later retrieval
-      const orderDetails = {
-        orderId: order.id,
-        customerData: data,
-        products: products,
-        subtotal: subtotal,
-        user: user,
-      };
 
       return res.status(201).json({
         success: true,
         orderId: order.id,
         message: "Order created, proceed to PayPal",
-        orderDetails: orderDetails,
+        total: lineItems.total,
       });
     }
 
-    // Handle other payment methods (credit card, eTransfer)
-    const userId = user?.id ? Number(user.id) : null;
+    // Demo-only: credit card / eTransfer are marked completed without a real gateway.
+    const userId = resolveOrderUserId(user);
 
     const order = await prisma.order.create({
-      data: {
-        userId: userId,
-        status: orderStatus || "Pending",
-        paymentMethod: paymentMethod,
+      data: buildOrderCreateData({
+        userId,
+        orderStatus,
+        paymentMethod,
         paymentStatus: "Completed",
-        total: subtotal,
-        items: {
-          create: products.map((product) => ({
-            productId: parseInt(product.id, 10),
-            quantity: product.quantity || 1,
-            unitPrice: product.price || 0,
-            size: product.size || null,
-            color: product.color || null,
-          })),
-        },
-      },
+        total: lineItems.total,
+        lineItems,
+        customer,
+      }),
     });
 
     return res.status(201).json({
@@ -491,16 +665,27 @@ app.get("/api/users/:userId/orders", async (req, res) => {
 
 // ========== PayPal Specific Endpoints ==========
 
-// Create PayPal payment
+// Create PayPal payment (sandbox demo — amount always comes from the DB order)
 app.post("/api/paypal/create-payment", async (req, res) => {
   try {
-    const { orderId, subtotal } = req.body;
+    const orderId = Number(req.body.orderId);
+    if (!orderId || Number.isNaN(orderId)) {
+      return res.status(400).json({ error: "Invalid order id" });
+    }
 
-    if (!orderId || !subtotal) {
-      return res.status(400).json({ error: "Missing required fields" });
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    if (order.paymentMethod !== "paypal") {
+      return res.status(400).json({ error: "Order is not a PayPal order" });
+    }
+    if (order.paymentStatus !== "Pending") {
+      return res.status(400).json({ error: "Order payment is not pending" });
     }
 
     const accessToken = await getPayPalAccessToken();
+    const amount = order.total.toFixed(2);
 
     const paymentData = {
       intent: "CAPTURE",
@@ -508,7 +693,7 @@ app.post("/api/paypal/create-payment", async (req, res) => {
         {
           amount: {
             currency_code: "USD",
-            value: parseFloat(subtotal).toFixed(2),
+            value: amount,
           },
           description: `Order #${orderId} - Nour Nasser Clothing`,
           custom_id: orderId.toString(),
@@ -559,10 +744,23 @@ app.post("/api/paypal/create-payment", async (req, res) => {
 // Execute PayPal payment (after user approval)
 app.post("/api/paypal/capture-payment", async (req, res) => {
   try {
-    const { orderId, paymentId } = req.body;
+    const orderId = Number(req.body.orderId);
+    const { paymentId } = req.body;
 
-    if (!orderId || !paymentId) {
+    if (!orderId || Number.isNaN(orderId) || !paymentId) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    if (order.paymentStatus === "Completed") {
+      return res.json({
+        success: true,
+        message: "Payment already captured",
+        orderId,
+      });
     }
 
     const accessToken = await getPayPalAccessToken();
@@ -579,6 +777,18 @@ app.post("/api/paypal/capture-payment", async (req, res) => {
     );
 
     if (response.data.status === "COMPLETED") {
+      const purchaseUnit = response.data.purchase_units?.[0];
+      if (purchaseUnit?.custom_id && purchaseUnit.custom_id !== String(orderId)) {
+        return res.status(400).json({ error: "PayPal order does not match store order" });
+      }
+
+      const capturedAmount = parseFloat(
+        purchaseUnit?.payments?.captures?.[0]?.amount?.value ?? "0"
+      );
+      if (Math.abs(capturedAmount - order.total) > 0.01) {
+        return res.status(400).json({ error: "Captured amount does not match order total" });
+      }
+
       await prisma.order.update({
         where: { id: orderId },
         data: {

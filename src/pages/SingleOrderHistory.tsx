@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useLoaderData, useNavigate } from "react-router-dom";
 import { formatDate } from "../utils/formatDate";
+import { calculateOrderTotal, calculateTax, FLAT_SHIPPING } from "../utils/orderTotals";
 
 const SingleOrderHistory = () => {
   const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
@@ -24,13 +25,39 @@ const SingleOrderHistory = () => {
         </h2>
         <p className="mb-2">Date: {formatDate(singleOrder.createdAt)}</p>
         <p className="mb-2">Subtotal: ${singleOrder.total.toFixed(2)}</p>
-        <p className="mb-2">Shipping: $5</p>
-        <p className="mb-2">Tax: ${(singleOrder.total / 5).toFixed(2)}</p>
+        <p className="mb-2">Shipping: ${FLAT_SHIPPING.toFixed(2)}</p>
+        <p className="mb-2">Tax: ${calculateTax(singleOrder.total).toFixed(2)}</p>
         <p className="mb-2">
           Total: $
-          {(singleOrder.total + 5 + singleOrder.total / 5).toFixed(2)}
+          {calculateOrderTotal(singleOrder.total).toFixed(2)}
         </p>
         <p className="mb-2">Status: {singleOrder.status}</p>
+        {(singleOrder.email || singleOrder.address) && (
+          <div className="mb-6 mt-4 border-t border-gray-200 pt-4">
+            <h3 className="text-xl font-semibold mb-3">Shipping & contact</h3>
+            {singleOrder.firstName || singleOrder.lastName ? (
+              <p className="mb-1">
+                {[singleOrder.firstName, singleOrder.lastName].filter(Boolean).join(" ")}
+              </p>
+            ) : null}
+            {singleOrder.email ? <p className="mb-1">{singleOrder.email}</p> : null}
+            {singleOrder.phone ? <p className="mb-1">{singleOrder.phone}</p> : null}
+            {singleOrder.address ? (
+              <p className="mb-1">
+                {singleOrder.address}
+                {singleOrder.apartment ? `, ${singleOrder.apartment}` : ""}
+              </p>
+            ) : null}
+            {(singleOrder.city || singleOrder.region || singleOrder.postalCode) && (
+              <p className="mb-1">
+                {[singleOrder.city, singleOrder.region, singleOrder.postalCode]
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
+            )}
+            {singleOrder.country ? <p>{singleOrder.country}</p> : null}
+          </div>
+        )}
         <h3 className="text-xl font-semibold mt-6 mb-4">Items</h3>
         <table className="singleOrder-table min-w-full bg-white border border-gray-200">
           <thead>

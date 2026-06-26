@@ -11,6 +11,7 @@ import {
 } from "../features/cart/cartSlice";
 import toast from "react-hot-toast";
 import { baseProductIdFromLineId } from "../utils/slugify";
+import { calculateOrderTotal, calculateTax, FLAT_SHIPPING } from "../utils/orderTotals";
 
 const Cart = () => {
   const { productsInCart, subtotal } = useAppSelector((state) => state.cart);
@@ -176,7 +177,7 @@ const Cart = () => {
                   </a>
                 </dt>
                 <dd className="text-sm font-medium text-gray-900">
-                  ${subtotal === 0 ? 0 : 5.0}
+                  ${subtotal === 0 ? 0 : FLAT_SHIPPING.toFixed(2)}
                 </dd>
               </div>
               <div className="flex items-center justify-between border-t border-gray-200 pt-4">
@@ -196,7 +197,7 @@ const Cart = () => {
                   </a>
                 </dt>
                 <dd className="text-sm font-medium text-gray-900">
-                  ${subtotal / 5}
+                  ${calculateTax(subtotal).toFixed(2)}
                 </dd>
               </div>
               <div className="flex items-center justify-between border-t border-gray-200 pt-4">
@@ -204,7 +205,7 @@ const Cart = () => {
                   Order total
                 </dt>
                 <dd className="text-base font-medium text-gray-900">
-                  ${subtotal === 0 ? 0 : subtotal + subtotal / 5 + 5}
+                  ${calculateOrderTotal(subtotal).toFixed(2)}
                 </dd>
               </div>
             </dl>

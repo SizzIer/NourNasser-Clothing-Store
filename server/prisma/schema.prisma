@@ -48,6 +48,17 @@ model Order {
   paymentMethod String      @default("paypal")
   paymentStatus String      @default("Pending")
   total         Float
+  email         String?
+  firstName     String?
+  lastName      String?
+  phone         String?
+  company       String?
+  address       String?
+  apartment     String?
+  city          String?
+  country       String?
+  region        String?
+  postalCode    String?
   createdAt     DateTime    @default(now())
 
   user          User?       @relation(fields: [userId], references: [id])

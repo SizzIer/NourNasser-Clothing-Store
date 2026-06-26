@@ -38,11 +38,26 @@
 npm install
 ```
 
-<p>4. Create <code>server/.env</code> (copy <code>server/.env.example</code>) so it contains at least:</p>
+<p>4. Create two env files (both are gitignored, so every teammate must create their own after pulling):</p>
+
+<p><code>server/.env</code> (copy <code>server/.env.example</code>):</p>
 
 ```
 DATABASE_URL="file:./dev.db"
+SESSION_SECRET=replace-with-a-long-random-string
+PAYPAL_CLIENT_ID=your-paypal-sandbox-client-id
+PAYPAL_SECRET=your-paypal-sandbox-secret
+PAYPAL_MODE=sandbox
+FRONTEND_URL=http://localhost:5173
 ```
+
+<p><code>.env</code> at the project root (copy <code>.env.example</code>):</p>
+
+```
+VITE_PAYPAL_CLIENT_ID=your-paypal-sandbox-client-id
+```
+
+<p>The PayPal values must match a PayPal Sandbox app's Client ID/Secret (from the <a href="https://developer.paypal.com/dashboard/applications/sandbox" target="_blank">PayPal Developer Dashboard</a>). Share the team's sandbox credentials over a secure channel, not in git — without them, PayPal checkout will fail.</p>
 
 <p>5. One command installs server dependencies, generates Prisma Client, applies migrations to SQLite, and runs the seed (safe to re-run):</p>
 

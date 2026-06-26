@@ -1,5 +1,4 @@
 import { HiTrash as TrashIcon } from "react-icons/hi2";
-import { Button } from "../components";
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { removeProductFromTheCart, clearCart } from "../features/cart/cartSlice";
 import customFetch from "../axios/custom";
@@ -429,7 +428,12 @@ const Checkout = () => {
             {/* PayPal Button Section */}
             <div className="mt-4 border border-blue-300 bg-blue-50 p-6 rounded-lg">
               <h3 className="text-base font-medium text-gray-900 mb-3">Pay with PayPal</h3>
-              {productsInCart.length > 0 ? (
+              {!import.meta.env.VITE_PAYPAL_CLIENT_ID ? (
+                <p className="text-sm text-red-600">
+                  PayPal is not configured: missing VITE_PAYPAL_CLIENT_ID. Copy .env.example to .env at the
+                  project root and fill in your PayPal sandbox client ID, then restart the dev server.
+                </p>
+              ) : productsInCart.length > 0 ? (
                 <PayPalScriptProvider options={{ clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID }}>
                   <PayPalButtons
                     style={{ layout: "vertical", label: "pay" }}

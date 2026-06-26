@@ -318,6 +318,11 @@ const PAYPAL_API_BASE =
 
 // Get PayPal Access Token
 async function getPayPalAccessToken() {
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
+    throw new Error(
+      "PAYPAL_CLIENT_ID / PAYPAL_SECRET are not set. Copy server/.env.example to server/.env and fill in your PayPal sandbox credentials."
+    );
+  }
   try {
     const response = await axios.post(
       `${PAYPAL_API_BASE}/v1/oauth2/token`,

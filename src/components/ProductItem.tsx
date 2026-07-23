@@ -1,6 +1,12 @@
 import { Link } from "react-router-dom";
 import { formatCategoryName } from "../utils/formatCategoryName";
 
+function resolveImage(image: string): string {
+  if (!image) return "";
+  if (image.startsWith("/") || image.startsWith("http")) return image;
+  return `/assets/${image}`;
+}
+
 const ProductItem = ({
   id,
   image,
@@ -28,7 +34,7 @@ const ProductItem = ({
         className="relative block w-full aspect-[3/4] overflow-hidden bg-neutral-100"
       >
         <img
-          src={`/assets/${image}`}
+          src={resolveImage(image)}
           alt={title}
           className="h-full w-full object-cover object-top"
         />

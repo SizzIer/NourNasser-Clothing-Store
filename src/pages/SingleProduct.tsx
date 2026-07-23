@@ -6,6 +6,13 @@ import { useAppDispatch } from "../hooks";
 import { formatCategorySlug } from "../utils/formatCategoryName";
 import { slugify } from "../utils/slugify";
 import toast from "react-hot-toast";
+import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
+
+function resolveImage(image: string | undefined | null): string {
+  if (!image) return "";
+  if (image.startsWith("/") || image.startsWith("http")) return image;
+  return `/assets/${image}`;
+}
 
 const PDP_SIZES = [
   { id: "xs", label: "XS" },
@@ -23,6 +30,9 @@ const optionPillInactive =
 
 const optionPillActive =
   "border-secondaryBrown bg-secondaryBrown text-white shadow-sm";
+
+const optionPillDisabled =
+  "border-black/10 bg-white text-black/25 line-through cursor-not-allowed";
 
 /** n full business days after `from` (Mon–Fri only; skips weekends). */
 function addBusinessDays(from: Date, n: number): Date {
@@ -56,6 +66,7 @@ const SingleProduct = () => {
   const [size, setSize] = useState<string>("xs");
   const [colorSlug, setColorSlug] = useState("");
   const [openAccordion, setOpenAccordion] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   const params = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
 
@@ -71,10 +82,63 @@ const SingleProduct = () => {
     return formatDeliveryRange(start, end);
   }, []);
 
+  // ── Inventory derived data ──────────────────────────────────
+  const inventoryRows = singleProduct?.inventory ?? null;
+  const hasInventory = Array.isArray(inventoryRows) && inventoryRows.length > 0;
+
+  // Distinct sizes from inventory (in insertion order)
+  const inventorySizes = useMemo<string[] | null>(() => {
+    if (!hasInventory) return null;
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const row of inventoryRows!) {
+      if (row.size && !seen.has(row.size)) {
+        seen.add(row.size);
+        result.push(row.size);
+      }
+    }
+    return result;
+  }, [inventoryRows, hasInventory]);
+
+  // Distinct colors from inventory (in insertion order)
+  const inventoryAllColors = useMemo<string[] | null>(() => {
+    if (!hasInventory) return null;
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const row of inventoryRows!) {
+      if (row.color && !seen.has(row.color)) {
+        seen.add(row.color);
+        result.push(row.color);
+      }
+    }
+    return result;
+  }, [inventoryRows, hasInventory]);
+
+  // Use inventory colors as the source of truth when inventory exists
   const availableColors = useMemo(
-    () => singleProduct?.colors?.filter(Boolean) ?? [],
-    [singleProduct?.colors]
+    () =>
+      hasInventory && inventoryAllColors?.length
+        ? inventoryAllColors
+        : (singleProduct?.colors?.filter(Boolean) ?? []),
+    [singleProduct?.colors, hasInventory, inventoryAllColors]
   );
+
+  const gallery = useMemo<string[]>(() => {
+    const imgs = singleProduct?.images;
+    if (Array.isArray(imgs) && imgs.length > 0) return imgs;
+    return singleProduct?.image ? [singleProduct.image] : [];
+  }, [singleProduct?.images, singleProduct?.image]);
+
+  // Stock count for the currently selected size + color (null = combo not in inventory)
+  const selectedInventoryStock = useMemo<number | null>(() => {
+    if (!hasInventory) return null;
+    const row = inventoryRows!.find(
+      (r) =>
+        r.size.toLowerCase() === size.toLowerCase() &&
+        slugify(r.color) === colorSlug
+    );
+    return row ? row.stock : null;
+  }, [inventoryRows, hasInventory, size, colorSlug]);
 
   useEffect(() => {
     const baseId = params.id?.split("-")[0] ?? "";
@@ -116,6 +180,14 @@ const SingleProduct = () => {
 
   useEffect(() => {
     setOpenAccordion(null);
+    setActiveIndex(0);
+    // Reset size: use first inventory size if available, otherwise fall back to "xs"
+    const inv = singleProduct?.inventory;
+    if (Array.isArray(inv) && inv.length > 0 && inv[0].size) {
+      setSize(inv[0].size);
+    } else {
+      setSize("xs");
+    }
   }, [singleProduct?.id]);
 
   const productCategoryKey = (p: Product | null) =>
@@ -157,10 +229,59 @@ const SingleProduct = () => {
     <div className="max-w-screen-2xl mx-auto px-5 max-[400px]:px-3">
       <div className="grid grid-cols-3 gap-x-8 max-lg:grid-cols-1">
         <div className="lg:col-span-2">
-          <img
-            src={`/assets/${singleProduct?.image}`}
-            alt={singleProduct?.title}
-          />
+          {/* Main image with prev/next arrows */}
+          <div className="relative w-full select-none">
+            <img
+              src={resolveImage(gallery[activeIndex])}
+              alt={singleProduct?.title}
+              className="w-full object-cover"
+            />
+            {gallery.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((i) => (i - 1 + gallery.length) % gallery.length)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md transition-colors"
+                  aria-label="Previous image"
+                >
+                  <FiChevronLeft size={22} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((i) => (i + 1) % gallery.length)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md transition-colors"
+                  aria-label="Next image"
+                >
+                  <FiChevronRight size={22} />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Thumbnail strip */}
+          {gallery.length > 1 && (
+            <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+              {gallery.map((img, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActiveIndex(i)}
+                  className={`shrink-0 w-20 h-24 overflow-hidden rounded border-2 transition-colors ${
+                    i === activeIndex
+                      ? "border-secondaryBrown"
+                      : "border-transparent hover:border-gray-300"
+                  }`}
+                  aria-label={`View image ${i + 1}`}
+                >
+                  <img
+                    src={resolveImage(img)}
+                    alt=""
+                    className="w-full h-full object-cover object-top"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="w-full flex flex-col gap-5 mt-9">
@@ -186,27 +307,41 @@ const SingleProduct = () => {
                 role="radiogroup"
                 aria-labelledby="pdp-size-label"
               >
-                {PDP_SIZES.map(({ id, label }) => {
-                  const selected = size === id;
+                {(inventorySizes ?? PDP_SIZES.map((p) => p.label)).map((sizeLabel) => {
+                  const sizeKey = inventorySizes
+                    ? sizeLabel
+                    : (PDP_SIZES.find((p) => p.label === sizeLabel)?.id ?? sizeLabel.toLowerCase());
+                  const selected = size.toLowerCase() === sizeKey.toLowerCase();
+                  const totalForSize = hasInventory
+                    ? inventoryRows!
+                        .filter((r) => r.size.toLowerCase() === sizeLabel.toLowerCase())
+                        .reduce((s, r) => s + r.stock, 0)
+                    : null;
+                  const oos = totalForSize !== null && totalForSize === 0;
                   return (
                     <button
-                      key={id}
+                      key={sizeLabel}
                       type="button"
                       role="radio"
                       aria-checked={selected}
-                      onClick={() => setSize(id)}
+                      onClick={() => setSize(sizeKey)}
                       className={`${optionPillBase} ${
-                        selected ? optionPillActive : optionPillInactive
+                        oos
+                          ? optionPillDisabled
+                          : selected
+                          ? optionPillActive
+                          : optionPillInactive
                       }`}
+                      title={oos ? "Out of stock" : undefined}
                     >
-                      {label}
+                      {sizeLabel}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {singleProduct?.colors && singleProduct.colors.length > 0 ? (
+            {availableColors.length > 0 ? (
               <div>
                 <p
                   className="text-sm mb-2.5 text-black/70"
@@ -219,9 +354,17 @@ const SingleProduct = () => {
                   role="radiogroup"
                   aria-labelledby="pdp-color-label"
                 >
-                  {singleProduct.colors.map((c) => {
+                  {availableColors.map((c) => {
                     const sid = slugify(c);
                     const selected = colorSlug === sid;
+                    const stockForCombo = hasInventory
+                      ? (inventoryRows!.find(
+                          (r) =>
+                            r.size.toLowerCase() === size.toLowerCase() &&
+                            r.color === c
+                        )?.stock ?? null)
+                      : null;
+                    const oos = stockForCombo !== null && stockForCombo === 0;
                     return (
                       <button
                         key={`${sid}-${c}`}
@@ -230,8 +373,19 @@ const SingleProduct = () => {
                         aria-checked={selected}
                         onClick={() => setColorSlug(sid)}
                         className={`${optionPillBase} ${
-                          selected ? optionPillActive : optionPillInactive
+                          oos
+                            ? optionPillDisabled
+                            : selected
+                            ? optionPillActive
+                            : optionPillInactive
                         }`}
+                        title={
+                          oos
+                            ? "Out of stock for this size"
+                            : stockForCombo !== null
+                            ? `${stockForCombo} in stock`
+                            : undefined
+                        }
                       >
                         {c}
                       </button>
@@ -242,6 +396,28 @@ const SingleProduct = () => {
             ) : null}
 
             <Button mode="brown" text="Add to cart" onClick={handleAddToCart} />
+
+            {/* Stock indicator */}
+            {hasInventory ? (
+              selectedInventoryStock !== null ? (
+                selectedInventoryStock > 0 ? (
+                  <p className="text-sm text-green-700 font-medium">
+                    {selectedInventoryStock} in stock for this size &amp; color
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-500 font-medium">
+                    Out of stock for this size &amp; color
+                  </p>
+                )
+              ) : null
+            ) : singleProduct && singleProduct.stock > 0 ? (
+              <p className="text-sm text-green-700 font-medium">
+                {singleProduct.stock} in stock
+              </p>
+            ) : singleProduct && singleProduct.stock === 0 ? (
+              <p className="text-sm text-red-500 font-medium">Out of stock</p>
+            ) : null}
+
             <p className="text-secondaryBrown text-sm text-right leading-snug">
               <span className="text-black/60">Estimated delivery: </span>
               {deliveryEstimate}
@@ -267,20 +443,30 @@ const SingleProduct = () => {
                 ? formatCategorySlug(productCategoryKey(singleProduct))
                 : ""}
               <br />
-              In stock: {singleProduct?.stock}
-              <br />
               Price: ${singleProduct?.price}
               <br />
-              Selected size: {size.toUpperCase()}
-              <br />
-              {singleProduct?.colors && singleProduct.colors.length > 0 ? (
+              {hasInventory ? (
                 <>
-                  Selected color:{" "}
-                  {singleProduct.colors.find(
-                    (c) => slugify(c) === colorSlug
-                  ) ?? singleProduct.colors[0]}
+                  <br />
+                  <span className="font-medium">Stock by size &amp; color:</span>
+                  <br />
+                  {inventoryRows!.map((row, i) => (
+                    <span key={i}>
+                      {row.size} / {row.color}:{" "}
+                      {row.stock > 0 ? (
+                        <span className="text-green-700">{row.stock} in stock</span>
+                      ) : (
+                        <span className="text-red-500">out of stock</span>
+                      )}
+                      <br />
+                    </span>
+                  ))}
                 </>
-              ) : null}
+              ) : (
+                <>
+                  In stock: {singleProduct?.stock}
+                </>
+              )}
             </Dropdown>
 
             {(singleProduct?.composition?.length ||

@@ -1,7 +1,15 @@
-﻿import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { FiPlus, FiEdit2, FiTrash2, FiX } from "react-icons/fi";
 import adminFetch from "../../axios/adminFetch";
 import toast from "react-hot-toast";
+
+const MAX_IMAGES = 10;
+
+interface InventoryRow {
+  size: string;
+  color: string;
+  stock: number;
+}
 
 interface AdminProduct {
   id: number;
@@ -9,6 +17,8 @@ interface AdminProduct {
   description: string;
   price: number;
   imageUrl: string;
+  images: string | null;
+  inventory: string | null;
   category: string;
   subcategory: string | null;
   fabric: string | null;
@@ -16,18 +26,62 @@ interface AdminProduct {
   createdAt: string;
 }
 
-type ProductFormData = Omit<AdminProduct, "id" | "createdAt">;
+interface ProductFormData {
+  name: string;
+  description: string;
+  price: number;
+  imageUrl: string;
+  images: string[];
+  inventory: InventoryRow[];
+  category: string;
+  subcategory: string;
+  fabric: string;
+  stock: number;
+}
 
 const EMPTY_FORM: ProductFormData = {
   name: "",
   description: "",
   price: 0,
   imageUrl: "",
+  images: [],
+  inventory: [],
   category: "",
   subcategory: "",
   fabric: "",
   stock: 0,
 };
+
+function parseProductImages(product: AdminProduct): string[] {
+  if (product.images) {
+    try {
+      const parsed = JSON.parse(product.images);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {
+      // fall through
+    }
+  }
+  return product.imageUrl ? [product.imageUrl] : [];
+}
+
+function parseProductInventory(product: AdminProduct): InventoryRow[] {
+  if (product.inventory) {
+    try {
+      const parsed = JSON.parse(product.inventory);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fall through
+    }
+  }
+  return [];
+}
+
+function computeTotalStock(inventory: InventoryRow[], manualStock: number): number {
+  if (inventory.length > 0) {
+    return inventory.reduce((sum, row) => sum + (row.stock || 0), 0);
+  }
+  return manualStock;
+}
 
 function ProductModal({
   product,
@@ -45,6 +99,8 @@ function ProductModal({
           description: product.description,
           price: product.price,
           imageUrl: product.imageUrl,
+          images: parseProductImages(product),
+          inventory: parseProductInventory(product),
           category: product.category,
           subcategory: product.subcategory ?? "",
           fabric: product.fabric ?? "",
@@ -53,10 +109,78 @@ function ProductModal({
       : EMPTY_FORM
   );
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const set = (field: keyof ProductFormData, value: string | number) =>
+  const set = (field: keyof Omit<ProductFormData, "images" | "inventory">, value: string | number) =>
     setForm((f) => ({ ...f, [field]: value }));
 
+  // ── Image handlers ──────────────────────────────────────────
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const remaining = MAX_IMAGES - form.images.length;
+    if (remaining <= 0) {
+      toast.error(`Maximum ${MAX_IMAGES} images reached`);
+      e.target.value = "";
+      return;
+    }
+    const toUpload = files.slice(0, remaining);
+    setUploading(true);
+    try {
+      const urls = await Promise.all(
+        toUpload.map(async (file) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await adminFetch.post<{ url: string }>("/upload", fd);
+          return res.data.url;
+        })
+      );
+      setForm((f) => {
+        const next = [...f.images, ...urls];
+        return { ...f, images: next, imageUrl: next[0] || f.imageUrl };
+      });
+    } catch {
+      toast.error("Failed to upload image(s)");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setForm((f) => {
+      const next = f.images.filter((_, i) => i !== index);
+      return { ...f, images: next, imageUrl: next[0] || "" };
+    });
+  };
+
+  // ── Inventory handlers ───────────────────────────────────────
+  const addInventoryRow = () =>
+    setForm((f) => ({
+      ...f,
+      inventory: [...f.inventory, { size: "", color: "", stock: 0 }],
+    }));
+
+  const removeInventoryRow = (index: number) =>
+    setForm((f) => ({
+      ...f,
+      inventory: f.inventory.filter((_, i) => i !== index),
+    }));
+
+  const updateInventoryRow = (
+    index: number,
+    field: keyof InventoryRow,
+    value: string | number
+  ) =>
+    setForm((f) => ({
+      ...f,
+      inventory: f.inventory.map((row, i) =>
+        i === index ? { ...row, [field]: value } : row
+      ),
+    }));
+
+  // ── Submit ──────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.category || form.price <= 0) {
@@ -65,11 +189,18 @@ function ProductModal({
     }
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({
+        ...form,
+        imageUrl: form.images[0] || "",
+        stock: computeTotalStock(form.inventory, form.stock),
+      });
     } finally {
       setSaving(false);
     }
   };
+
+  const hasInventory = form.inventory.length > 0;
+  const inventoryTotal = form.inventory.reduce((s, r) => s + (r.stock || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end">
@@ -86,6 +217,7 @@ function ProductModal({
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-5 px-6 py-6">
+          {/* Name */}
           <Field label="Product Name *">
             <input
               type="text"
@@ -97,6 +229,7 @@ function ProductModal({
             />
           </Field>
 
+          {/* Description */}
           <Field label="Description">
             <textarea
               value={form.description}
@@ -107,7 +240,8 @@ function ProductModal({
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Price + Stock (Stock hidden when inventory rows exist) */}
+          <div className={`grid gap-4 ${hasInventory ? "grid-cols-1" : "grid-cols-2"}`}>
             <Field label="Price ($) *">
               <input
                 type="number"
@@ -119,17 +253,20 @@ function ProductModal({
                 required
               />
             </Field>
-            <Field label="Stock">
-              <input
-                type="number"
-                min={0}
-                value={form.stock}
-                onChange={(e) => set("stock", parseInt(e.target.value, 10) || 0)}
-                className={INPUT}
-              />
-            </Field>
+            {!hasInventory && (
+              <Field label="Stock">
+                <input
+                  type="number"
+                  min={0}
+                  value={form.stock}
+                  onChange={(e) => set("stock", parseInt(e.target.value, 10) || 0)}
+                  className={INPUT}
+                />
+              </Field>
+            )}
           </div>
 
+          {/* Category + Subcategory */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Category *">
               <input
@@ -152,16 +289,7 @@ function ProductModal({
             </Field>
           </div>
 
-          <Field label="Image URL">
-            <input
-              type="text"
-              value={form.imageUrl}
-              onChange={(e) => set("imageUrl", e.target.value)}
-              className={INPUT}
-              placeholder="/images/product.jpg"
-            />
-          </Field>
-
+          {/* Fabric */}
           <Field label="Fabric">
             <input
               type="text"
@@ -172,10 +300,150 @@ function ProductModal({
             />
           </Field>
 
+          {/* Inventory by Size & Color */}
+          <Field label="Inventory by Size & Color">
+            {hasInventory ? (
+              <div className="flex flex-col gap-2">
+                {/* Column headers */}
+                <div className="grid grid-cols-[1fr_1fr_68px_28px] gap-1.5 px-0.5">
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Size</span>
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Color</span>
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-right">Stock</span>
+                  <span />
+                </div>
+
+                {/* Rows */}
+                {form.inventory.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_1fr_68px_28px] gap-1.5 items-center">
+                    <input
+                      type="text"
+                      value={row.size}
+                      onChange={(e) => updateInventoryRow(i, "size", e.target.value)}
+                      className={INPUT}
+                      placeholder="e.g. M"
+                    />
+                    <input
+                      type="text"
+                      value={row.color}
+                      onChange={(e) => updateInventoryRow(i, "color", e.target.value)}
+                      className={INPUT}
+                      placeholder="e.g. Black"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.stock}
+                      onChange={(e) =>
+                        updateInventoryRow(i, "stock", parseInt(e.target.value, 10) || 0)
+                      }
+                      className={`${INPUT} text-right pr-2`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeInventoryRow(i)}
+                      className="flex items-center justify-center p-1 text-gray-300 hover:text-red-500 transition-colors"
+                      aria-label="Remove row"
+                    >
+                      <FiX size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Footer: add row + total */}
+                <div className="flex items-center justify-between pt-1 mt-0.5 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={addInventoryRow}
+                    className="flex items-center gap-1 text-xs text-[#A78BFA] hover:text-purple-700 font-medium transition-colors"
+                  >
+                    <FiPlus size={13} />
+                    Add row
+                  </button>
+                  <p className="text-xs text-gray-500">
+                    Total:{" "}
+                    <span className="font-semibold text-gray-800">{inventoryTotal}</span>{" "}
+                    in stock
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={addInventoryRow}
+                className="flex items-center gap-2 w-full px-3 py-2.5 border-2 border-dashed border-gray-200 rounded text-xs text-gray-400 hover:border-[#A78BFA] hover:text-[#A78BFA] justify-center transition-colors"
+              >
+                <FiPlus size={14} />
+                Track stock by size &amp; color
+              </button>
+            )}
+            {hasInventory && (
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Stock field is auto-calculated from the rows above.
+              </p>
+            )}
+          </Field>
+
+          {/* Photos */}
+          <Field label={`Photos (${form.images.length} / ${MAX_IMAGES})`}>
+            <div className="grid grid-cols-4 gap-2">
+              {form.images.map((url, i) => (
+                <div key={i} className="relative aspect-square">
+                  <img
+                    src={url}
+                    alt=""
+                    className="w-full h-full object-cover rounded border border-gray-200"
+                  />
+                  {i === 0 && (
+                    <span className="absolute top-1 left-1 text-[8px] bg-[#A78BFA] text-white px-1 py-0.5 rounded font-bold uppercase leading-none">
+                      Main
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(i)}
+                    className="absolute top-1 right-1 bg-black/60 hover:bg-black text-white rounded-full p-0.5 transition-colors"
+                  >
+                    <FiX size={10} />
+                  </button>
+                </div>
+              ))}
+              {form.images.length < MAX_IMAGES && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="aspect-square border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-[#A78BFA] hover:text-[#A78BFA] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploading ? (
+                    <span className="text-[11px] text-center leading-tight px-1">Uploading…</span>
+                  ) : (
+                    <>
+                      <FiPlus size={18} />
+                      <span className="text-[11px]">Add Photo</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+              multiple
+              className="hidden"
+              onChange={handleFilesSelected}
+            />
+            {form.images.length === 0 && (
+              <p className="text-xs text-gray-400 mt-1">
+                Click "Add Photo" to upload images (JPG, PNG, GIF, WEBP). First image shown as the main product photo.
+              </p>
+            )}
+          </Field>
+
           <div className="mt-auto pt-4">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || uploading}
               className="w-full py-3 bg-[#0f0f0f] text-white text-sm font-semibold uppercase tracking-widest rounded hover:bg-gray-800 disabled:opacity-50 transition-colors"
             >
               {saving ? "Saving…" : product ? "Save Changes" : "Create Product"}
@@ -275,44 +543,62 @@ const AdminProducts = () => {
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
-                  <tr key={product.id} className="border-t border-gray-100">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-3">
-                        {product.imageUrl && (
-                          <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                            className="w-10 h-10 object-cover rounded border border-gray-200"
-                          />
+                {products.map((product) => {
+                  const allImages = parseProductImages(product);
+                  const inventoryRows = parseProductInventory(product);
+                  const totalStock = computeTotalStock(inventoryRows, product.stock);
+                  const skuCount = inventoryRows.length;
+                  return (
+                    <tr key={product.id} className="border-t border-gray-100">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          {allImages.length > 0 && (
+                            <div className="relative shrink-0">
+                              <img
+                                src={allImages[0]}
+                                alt={product.name}
+                                className="w-10 h-10 object-cover rounded border border-gray-200"
+                              />
+                              {allImages.length > 1 && (
+                                <span className="absolute -bottom-1 -right-1 bg-gray-700 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                                  {allImages.length}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <span className="font-medium text-gray-800">{product.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-gray-600">
+                        {product.category}
+                        {product.subcategory ? ` / ${product.subcategory}` : ""}
+                      </td>
+                      <td className="py-3 px-4 text-gray-600">${product.price.toFixed(2)}</td>
+                      <td className="py-3 px-4">
+                        <p className="text-gray-700 font-medium">{totalStock}</p>
+                        {skuCount > 0 && (
+                          <p className="text-[11px] text-gray-400">{skuCount} SKU{skuCount !== 1 ? "s" : ""}</p>
                         )}
-                        <span className="font-medium text-gray-800">{product.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {product.category}
-                      {product.subcategory ? ` / ${product.subcategory}` : ""}
-                    </td>
-                    <td className="py-3 px-4 text-gray-600">${product.price.toFixed(2)}</td>
-                    <td className="py-3 px-4 text-gray-600">{product.stock}</td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setModalProduct(product)}
-                          className="p-1.5 text-gray-400 hover:text-[#A78BFA]"
-                        >
-                          <FiEdit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(product)}
-                          className="p-1.5 text-gray-400 hover:text-red-500"
-                        >
-                          <FiTrash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setModalProduct(product)}
+                            className="p-1.5 text-gray-400 hover:text-[#A78BFA]"
+                          >
+                            <FiEdit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(product)}
+                            className="p-1.5 text-gray-400 hover:text-red-500"
+                          >
+                            <FiTrash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

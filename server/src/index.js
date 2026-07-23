@@ -4,6 +4,36 @@ import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import axios from "axios";
+import { fileURLToPath } from "url";
+import path from "path";
+import fs from "fs";
+import multer from "multer";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const UPLOADS_DIR = path.join(__dirname, "../public/uploads");
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const multerStorage = multer.diskStorage({
+  destination: UPLOADS_DIR,
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+  },
+});
+const upload = multer({
+  storage: multerStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed (JPG, PNG, GIF, WEBP, AVIF)"));
+    }
+  },
+});
 
 dotenv.config();
 
@@ -21,6 +51,7 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 app.get("/", (req, res) => {
   res.send("Backend server is running");
@@ -255,6 +286,28 @@ function parseColors(raw) {
   return null;
 }
 
+function parseJsonArray(raw) {
+  if (raw == null || raw === "") return null;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function resolveImagePath(imageUrl) {
+  if (!imageUrl) return "";
+  // Uploaded files and external URLs pass through unchanged
+  if (imageUrl.startsWith("/uploads/") || imageUrl.startsWith("http")) return imageUrl;
+  // Legacy /images/filename.jpg → strip prefix (frontend prepends /assets/)
+  return imageUrl.replace(/^\/images\//, "");
+}
+
 function fabricSearchBlob(product) {
   const parts = [product.fabric, product.careInstructions];
   const comp = parseComposition(product.composition);
@@ -282,24 +335,36 @@ app.get("/api/products", async (req, res) => {
       products = products.filter((p) => fabricSearchBlob(p).includes(n));
     }
 
-    const formattedProducts = products.map((product) => ({
-      id: product.id,
-      title: product.name,
-      description: product.description,
-      image: product.imageUrl.replace("/images/", ""),
-      category: product.category.toLowerCase(),
-      categorySlug: slugify(product.category),
-      subcategory: product.subcategory
-        ? product.subcategory.toLowerCase()
-        : null,
-      fabric: product.fabric,
-      composition: parseComposition(product.composition),
-      careInstructions: product.careInstructions,
-      colors: parseColors(product.colors),
-      price: product.price,
-      popularity: 5,
-      stock: product.stock,
-    }));
+    const formattedProducts = products.map((product) => {
+      const rawImages = parseColors(product.images);
+      const resolvedImages = rawImages && rawImages.length > 0
+        ? rawImages.map(resolveImagePath)
+        : [resolveImagePath(product.imageUrl)].filter(Boolean);
+      const inventoryRows = parseJsonArray(product.inventory);
+      const totalStock = inventoryRows && inventoryRows.length > 0
+        ? inventoryRows.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
+        : product.stock;
+      return {
+        id: product.id,
+        title: product.name,
+        description: product.description,
+        image: resolveImagePath(product.imageUrl),
+        images: resolvedImages,
+        category: product.category.toLowerCase(),
+        categorySlug: slugify(product.category),
+        subcategory: product.subcategory
+          ? product.subcategory.toLowerCase()
+          : null,
+        fabric: product.fabric,
+        composition: parseComposition(product.composition),
+        careInstructions: product.careInstructions,
+        colors: parseColors(product.colors),
+        inventory: inventoryRows,
+        price: product.price,
+        popularity: 5,
+        stock: totalStock,
+      };
+    });
 
     res.json(formattedProducts);
   } catch (error) {
@@ -881,6 +946,16 @@ app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   }
 });
 
+// ========== Admin Upload ==========
+
+app.post("/api/admin/upload", requireAdmin, (req, res) => {
+  upload.single("file")(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    res.json({ url: `/uploads/${req.file.filename}` });
+  });
+});
+
 // ========== Admin Orders ==========
 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
@@ -937,19 +1012,27 @@ app.get("/api/admin/products", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
   try {
-    const { name, description, price, imageUrl, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
     if (!name || price === undefined || !category) {
       return res.status(400).json({ error: "name, price, and category are required" });
     }
+    const imageArr = Array.isArray(images) ? images : [];
+    const primaryUrl = imageArr[0] || imageUrl || "";
+    const inventoryArr = Array.isArray(inventory) ? inventory : [];
+    const totalStock = inventoryArr.length > 0
+      ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
+      : Number(stock) || 0;
     const product = await prisma.product.create({
       data: {
         name,
         description: description || "",
         price: Number(price),
-        imageUrl: imageUrl || "",
+        imageUrl: primaryUrl,
+        images: imageArr.length > 0 ? JSON.stringify(imageArr) : null,
+        inventory: inventoryArr.length > 0 ? JSON.stringify(inventoryArr) : null,
         category,
         subcategory: subcategory || null,
-        stock: Number(stock) || 0,
+        stock: totalStock,
         fabric: fabric || null,
         composition: composition ? JSON.stringify(composition) : null,
         careInstructions: careInstructions || null,
@@ -966,15 +1049,29 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
 app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
   try {
     const productId = Number(req.params.id);
-    const { name, description, price, imageUrl, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
     const data = {};
     if (name !== undefined) data.name = name;
     if (description !== undefined) data.description = description;
     if (price !== undefined) data.price = Number(price);
-    if (imageUrl !== undefined) data.imageUrl = imageUrl;
+    if (images !== undefined) {
+      const imageArr = Array.isArray(images) ? images : [];
+      data.images = imageArr.length > 0 ? JSON.stringify(imageArr) : null;
+      data.imageUrl = imageArr[0] || imageUrl || "";
+    } else if (imageUrl !== undefined) {
+      data.imageUrl = imageUrl;
+    }
+    if (inventory !== undefined) {
+      const inventoryArr = Array.isArray(inventory) ? inventory : [];
+      data.inventory = inventoryArr.length > 0 ? JSON.stringify(inventoryArr) : null;
+      data.stock = inventoryArr.length > 0
+        ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
+        : Number(stock) || 0;
+    } else if (stock !== undefined) {
+      data.stock = Number(stock);
+    }
     if (category !== undefined) data.category = category;
     if (subcategory !== undefined) data.subcategory = subcategory || null;
-    if (stock !== undefined) data.stock = Number(stock);
     if (fabric !== undefined) data.fabric = fabric || null;
     if (composition !== undefined) data.composition = composition ? JSON.stringify(composition) : null;
     if (careInstructions !== undefined) data.careInstructions = careInstructions || null;

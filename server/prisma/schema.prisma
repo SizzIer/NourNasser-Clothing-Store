@@ -35,6 +35,10 @@ model Product {
   careInstructions String?
   /// JSON array of color labels, e.g. ["Black","Ivory"].
   colors    String?
+  /// JSON array of image URLs (up to 10). First entry is also stored in imageUrl.
+  images    String?
+  /// JSON array of {size, color, stock} objects for per-SKU inventory tracking.
+  inventory String?
   stock     Int      @default(0)
   createdAt DateTime @default(now())
 

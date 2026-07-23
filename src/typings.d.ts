@@ -8,6 +8,10 @@ interface Product {
   title: string;
   description?: string;
   image: string;
+  /** All product images (resolved URLs). First entry matches image. */
+  images?: string[] | null;
+  /** Per-SKU stock tracking set up in the admin panel. */
+  inventory?: Array<{ size: string; color: string; stock: number }> | null;
   category: string;
   categorySlug?: string;
   subcategory?: string | null;

@@ -6,16 +6,46 @@ cd /d "%~dp0"
 echo Starting Kind Stitch...
 echo.
 
+REM Ensure Node.js is available (system install, or download portable copy into .tools\node)
+set "NODE_BIN_FILE=%TEMP%\kindstitch-node-bin.txt"
+set "POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%POWERSHELL%" set "POWERSHELL=powershell"
+del "%NODE_BIN_FILE%" >nul 2>nul
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ensure-node.ps1" -BinPathOut "%NODE_BIN_FILE%"
+if errorlevel 1 (
+  echo.
+  echo App failed to start. See messages above.
+  pause
+  exit /b 1
+)
+set "NODE_BIN="
+if exist "%NODE_BIN_FILE%" (
+  set /p NODE_BIN=<"%NODE_BIN_FILE%"
+  del "%NODE_BIN_FILE%" >nul 2>nul
+)
+if defined NODE_BIN (
+  if not "%NODE_BIN%"=="" (
+    set "PATH=%NODE_BIN%;%PATH%"
+  )
+)
+
 where npm >nul 2>nul
 if errorlevel 1 (
-  echo Node.js/npm was not found on PATH.
+  echo Node.js/npm is still not available after setup.
   echo Install Node.js LTS from https://nodejs.org then try again.
   pause
   exit /b 1
 )
 
+for /f "delims=" %%v in ('node -v 2^>nul') do echo [ok] Using Node %%v
+echo.
+
 if not exist "node_modules\" (
   echo Installing frontend dependencies...
+  call npm install
+  if errorlevel 1 goto :failed
+) else if not exist "node_modules\wait-on\" (
+  echo Frontend deps look incomplete ^(missing wait-on^). Reinstalling...
   call npm install
   if errorlevel 1 goto :failed
 ) else (
@@ -57,8 +87,10 @@ call npm run setup
 if errorlevel 1 goto :failed
 
 echo.
-echo Will open Chrome at http://127.0.0.1:5173 when the app is ready...
-start /b "" node scripts\wait-and-open.mjs
+echo NOTE: The storefront is http://localhost:5173 ^(not :4000 — that is only the API^).
+echo Chrome will open http://localhost:5173 automatically when Vite is ready...
+REM Launch opener in a separate process so it survives npm/concurrently output
+start "KindStitch-OpenBrowser" /min cmd /c "set PATH=%PATH%&& set APP_URL=http://localhost:5173&& node scripts\wait-and-open.mjs"
 
 echo Starting dev servers ^(Ctrl+C to stop^)...
 call npm start

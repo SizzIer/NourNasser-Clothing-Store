@@ -12,11 +12,18 @@ lerna-debug.log*
 
 node_modules
 
+# Portable Node.js downloaded by Start-App.bat for clients without Node
+.tools/
+
 # Local SQLite databases (created by Prisma migrate; do not commit)
 *.db
 *.db-journal
 server/dev.db
 server/prisma/dev.db
+
+# Admin-uploaded product images (local only; DB stores URL paths)
+server/public/uploads/*
+!server/public/uploads/.gitkeep
 
 # Python cache files
 __pycache__/

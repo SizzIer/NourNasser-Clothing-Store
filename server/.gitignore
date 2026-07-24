@@ -3,3 +3,7 @@ node_modules
 .env
 
 /generated/prisma
+
+# Admin-uploaded product images (local only)
+public/uploads/*
+!public/uploads/.gitkeep

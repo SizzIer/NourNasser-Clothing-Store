@@ -14,14 +14,6 @@ function resolveImage(image: string | undefined | null): string {
   return `/assets/${image}`;
 }
 
-const PDP_SIZES = [
-  { id: "xs", label: "XS" },
-  { id: "s", label: "S" },
-  { id: "m", label: "M" },
-  { id: "l", label: "L" },
-  { id: "xl", label: "XL" },
-] as const;
-
 const optionPillBase =
   "min-h-[42px] min-w-[44px] rounded-full border px-4 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-secondaryBrown focus-visible:ring-offset-2";
 
@@ -114,13 +106,10 @@ const SingleProduct = () => {
     return result;
   }, [inventoryRows, hasInventory]);
 
-  // Use inventory colors as the source of truth when inventory exists
+  // Colors are only shown for products tracked by size & color inventory.
   const availableColors = useMemo(
-    () =>
-      hasInventory && inventoryAllColors?.length
-        ? inventoryAllColors
-        : (singleProduct?.colors?.filter(Boolean) ?? []),
-    [singleProduct?.colors, hasInventory, inventoryAllColors]
+    () => (hasInventory ? inventoryAllColors ?? [] : []),
+    [hasInventory, inventoryAllColors]
   );
 
   const gallery = useMemo<string[]>(() => {
@@ -190,15 +179,44 @@ const SingleProduct = () => {
     }
   }, [singleProduct?.id]);
 
+  // Whenever the selected color changes, make sure the selected size is
+  // actually in stock for that color — sizes vary per color (e.g. black
+  // only comes in L while green comes in S–XL), so a size picked for one
+  // color can be invalid for another.
+  useEffect(() => {
+    if (!hasInventory || !colorSlug) return;
+    const rowsForColor = inventoryRows!.filter(
+      (r) => slugify(r.color) === colorSlug
+    );
+    const currentValid = rowsForColor.some(
+      (r) => r.size.toLowerCase() === size.toLowerCase() && r.stock > 0
+    );
+    if (!currentValid) {
+      const firstInStock = rowsForColor.find((r) => r.stock > 0);
+      if (firstInStock) setSize(firstInStock.size);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorSlug, hasInventory, inventoryRows]);
+
   const productCategoryKey = (p: Product | null) =>
     p ? p.categorySlug ?? slugify(p.category) : "";
 
+  const noInventoryOutOfStock =
+    !hasInventory && !!singleProduct && singleProduct.stock <= 0;
+
   const handleAddToCart = () => {
+    if (hasInventory && selectedInventoryStock !== null && selectedInventoryStock <= 0) {
+      toast.error("That size and color combination is out of stock");
+      return;
+    }
+    if (noInventoryOutOfStock) {
+      toast.error("Out of stock");
+      return;
+    }
     if (singleProduct) {
-      const colors = singleProduct.colors?.filter(Boolean) ?? [];
-      const hasColors = colors.length > 0;
+      const hasColors = availableColors.length > 0;
       const colorLabel = hasColors
-        ? colors.find((c) => slugify(c) === colorSlug) ?? colors[0]
+        ? availableColors.find((c) => slugify(c) === colorSlug) ?? availableColors[0]
         : "";
       const colorSuffix =
         hasColors && colorLabel ? `-${slugify(colorLabel)}` : "";
@@ -298,48 +316,51 @@ const SingleProduct = () => {
           </div>
 
           <div className="flex flex-col gap-3">
-            <div>
-              <p className="text-sm mb-2.5 text-black/70" id="pdp-size-label">
-                Size
-              </p>
-              <div
-                className="flex flex-wrap gap-2"
-                role="radiogroup"
-                aria-labelledby="pdp-size-label"
-              >
-                {(inventorySizes ?? PDP_SIZES.map((p) => p.label)).map((sizeLabel) => {
-                  const sizeKey = inventorySizes
-                    ? sizeLabel
-                    : (PDP_SIZES.find((p) => p.label === sizeLabel)?.id ?? sizeLabel.toLowerCase());
-                  const selected = size.toLowerCase() === sizeKey.toLowerCase();
-                  const totalForSize = hasInventory
-                    ? inventoryRows!
-                        .filter((r) => r.size.toLowerCase() === sizeLabel.toLowerCase())
-                        .reduce((s, r) => s + r.stock, 0)
-                    : null;
-                  const oos = totalForSize !== null && totalForSize === 0;
-                  return (
-                    <button
-                      key={sizeLabel}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setSize(sizeKey)}
-                      className={`${optionPillBase} ${
-                        oos
-                          ? optionPillDisabled
-                          : selected
-                          ? optionPillActive
-                          : optionPillInactive
-                      }`}
-                      title={oos ? "Out of stock" : undefined}
-                    >
-                      {sizeLabel}
-                    </button>
-                  );
-                })}
+            {hasInventory && inventorySizes && inventorySizes.length > 0 ? (
+              <div>
+                <p className="text-sm mb-2.5 text-black/70" id="pdp-size-label">
+                  Size
+                </p>
+                <div
+                  className="flex flex-wrap gap-2"
+                  role="radiogroup"
+                  aria-labelledby="pdp-size-label"
+                >
+                  {inventorySizes.map((sizeLabel) => {
+                    const sizeKey = sizeLabel;
+                    const selected = size.toLowerCase() === sizeKey.toLowerCase();
+                    const totalForSize = inventoryRows!
+                      .filter(
+                        (r) =>
+                          r.size.toLowerCase() === sizeLabel.toLowerCase() &&
+                          (!colorSlug || slugify(r.color) === colorSlug)
+                      )
+                      .reduce((s, r) => s + r.stock, 0);
+                    const oos = totalForSize === 0;
+                    return (
+                      <button
+                        key={sizeLabel}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={oos}
+                        onClick={() => setSize(sizeKey)}
+                        className={`${optionPillBase} ${
+                          oos
+                            ? optionPillDisabled
+                            : selected
+                            ? optionPillActive
+                            : optionPillInactive
+                        }`}
+                        title={oos ? "Out of stock" : undefined}
+                      >
+                        {sizeLabel}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {availableColors.length > 0 ? (
               <div>
@@ -358,13 +379,22 @@ const SingleProduct = () => {
                     const sid = slugify(c);
                     const selected = colorSlug === sid;
                     const stockForCombo = hasInventory
-                      ? (inventoryRows!.find(
-                          (r) =>
-                            r.size.toLowerCase() === size.toLowerCase() &&
-                            r.color === c
-                        )?.stock ?? null)
+                      ? (inventoryRows!
+                          .filter(
+                            (r) =>
+                              r.size.toLowerCase() === size.toLowerCase() &&
+                              r.color === c
+                          )
+                          .reduce((s, r) => s + r.stock, 0))
                       : null;
-                    const oos = stockForCombo !== null && stockForCombo === 0;
+                    // Only strike the color through when it's out of stock in
+                    // every size, not just the currently selected size.
+                    const colorTotalStock = hasInventory
+                      ? inventoryRows!
+                          .filter((r) => r.color === c)
+                          .reduce((s, r) => s + r.stock, 0)
+                      : null;
+                    const oos = colorTotalStock !== null && colorTotalStock === 0;
                     return (
                       <button
                         key={`${sid}-${c}`}
@@ -381,9 +411,9 @@ const SingleProduct = () => {
                         }`}
                         title={
                           oos
-                            ? "Out of stock for this size"
+                            ? "Out of stock"
                             : stockForCombo !== null
-                            ? `${stockForCombo} in stock`
+                            ? `${stockForCombo} in stock for this size`
                             : undefined
                         }
                       >
@@ -395,27 +425,38 @@ const SingleProduct = () => {
               </div>
             ) : null}
 
-            <Button mode="brown" text="Add to cart" onClick={handleAddToCart} />
+            <Button
+              mode="brown"
+              text={
+                noInventoryOutOfStock ||
+                (hasInventory && selectedInventoryStock === 0)
+                  ? "Out of stock"
+                  : "Add to cart"
+              }
+              onClick={handleAddToCart}
+              disabled={
+                noInventoryOutOfStock ||
+                (hasInventory && selectedInventoryStock === 0)
+              }
+              style={
+                noInventoryOutOfStock ||
+                (hasInventory && selectedInventoryStock === 0)
+                  ? { opacity: 0.5, cursor: "not-allowed" }
+                  : undefined
+              }
+            />
 
-            {/* Stock indicator */}
-            {hasInventory ? (
-              selectedInventoryStock !== null ? (
-                selectedInventoryStock > 0 ? (
-                  <p className="text-sm text-green-700 font-medium">
-                    {selectedInventoryStock} in stock for this size &amp; color
-                  </p>
-                ) : (
-                  <p className="text-sm text-red-500 font-medium">
-                    Out of stock for this size &amp; color
-                  </p>
-                )
-              ) : null
-            ) : singleProduct && singleProduct.stock > 0 ? (
-              <p className="text-sm text-green-700 font-medium">
-                {singleProduct.stock} in stock
-              </p>
-            ) : singleProduct && singleProduct.stock === 0 ? (
-              <p className="text-sm text-red-500 font-medium">Out of stock</p>
+            {/* Stock indicator (only for products tracked by size & color) */}
+            {hasInventory && selectedInventoryStock !== null ? (
+              selectedInventoryStock > 0 ? (
+                <p className="text-sm text-green-700 font-medium">
+                  {selectedInventoryStock} in stock for this size &amp; color
+                </p>
+              ) : (
+                <p className="text-sm text-red-500 font-medium">
+                  Out of stock for this size &amp; color
+                </p>
+              )
             ) : null}
 
             <p className="text-secondaryBrown text-sm text-right leading-snug">
@@ -444,75 +485,30 @@ const SingleProduct = () => {
                 : ""}
               <br />
               Price: ${singleProduct?.price}
-              <br />
-              {hasInventory ? (
-                <>
-                  <br />
-                  <span className="font-medium">Stock by size &amp; color:</span>
-                  <br />
-                  {inventoryRows!.map((row, i) => (
-                    <span key={i}>
-                      {row.size} / {row.color}:{" "}
-                      {row.stock > 0 ? (
-                        <span className="text-green-700">{row.stock} in stock</span>
-                      ) : (
-                        <span className="text-red-500">out of stock</span>
-                      )}
-                      <br />
-                    </span>
-                  ))}
-                </>
-              ) : (
-                <>
-                  In stock: {singleProduct?.stock}
-                </>
-              )}
             </Dropdown>
 
-            {(singleProduct?.composition?.length ||
-              singleProduct?.fabric ||
-              singleProduct?.careInstructions) && (
+            {(singleProduct?.fabric || singleProduct?.careInstructions) && (
               <Dropdown
                 dropdownTitle="Fabric & care"
                 accordionId="fabric"
                 {...accordionProps}
               >
                 {singleProduct.fabric ? (
-                  <p className="text-sm text-black/80 leading-relaxed mb-4">
-                    {singleProduct.fabric}
-                  </p>
-                ) : null}
-                {singleProduct.composition &&
-                singleProduct.composition.length > 0 ? (
                   <>
                     <p className="text-xs font-semibold uppercase tracking-wide text-black/50 mb-2">
-                      Composition
+                      Fabric
                     </p>
-                    <ul className="list-none space-y-1.5 text-sm mb-4">
-                      {singleProduct.composition.map((row, i) => (
-                        <li
-                          key={`${row.fiber}-${i}`}
-                          className="flex justify-between gap-4 border-b border-black/5 pb-1.5 last:border-0"
-                        >
-                          <span className="text-black/80">{row.fiber}</span>
-                          <span className="font-medium tabular-nums shrink-0">
-                            {row.percent}%
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-sm text-black/80 leading-relaxed mb-4 break-words">
+                      {singleProduct.fabric}
+                    </p>
                   </>
-                ) : !singleProduct.fabric ? (
-                  <p className="text-sm text-black/60 mb-4">
-                    Composition for this item will be listed here.
-                  </p>
                 ) : null}
                 {singleProduct.careInstructions ? (
                   <>
                     <p className="text-xs font-semibold uppercase tracking-wide text-black/50 mb-2">
-                      Care
+                      Care Instructions
                     </p>
-                    <p className="text-sm text-black/80 leading-relaxed whitespace-pre-line">
+                    <p className="text-sm text-black/80 leading-relaxed whitespace-pre-line break-words">
                       {singleProduct.careInstructions}
                     </p>
                   </>

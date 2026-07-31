@@ -254,20 +254,6 @@ app.get("/api/categories", async (req, res) => {
   }
 });
 
-function parseComposition(raw) {
-  if (raw == null || raw === "") return null;
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === "string") {
-    try {
-      const v = JSON.parse(raw);
-      return Array.isArray(v) ? v : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 function parseColors(raw) {
   if (raw == null || raw === "") return null;
   if (Array.isArray(raw)) {
@@ -310,12 +296,6 @@ function resolveImagePath(imageUrl) {
 
 function fabricSearchBlob(product) {
   const parts = [product.fabric, product.careInstructions];
-  const comp = parseComposition(product.composition);
-  if (comp) {
-    for (const row of comp) {
-      if (row && typeof row.fiber === "string") parts.push(row.fiber);
-    }
-  }
   const cols = parseColors(product.colors);
   if (cols) parts.push(...cols);
   return parts.filter(Boolean).join(" ").toLowerCase();
@@ -356,7 +336,6 @@ app.get("/api/products", async (req, res) => {
           ? product.subcategory.toLowerCase()
           : null,
         fabric: product.fabric,
-        composition: parseComposition(product.composition),
         careInstructions: product.careInstructions,
         colors: parseColors(product.colors),
         inventory: inventoryRows,
@@ -1062,7 +1041,7 @@ app.get("/api/admin/products", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
   try {
-    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors } = req.body;
     if (!name || price === undefined || !category) {
       return res.status(400).json({ error: "name, price, and category are required" });
     }
@@ -1070,7 +1049,6 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
     const imageArr = normalizeAdminProductImages(images);
     const primaryUrl = imageArr[0] || String(imageUrl || "").trim();
     const inventoryArr = normalizeAdminProductInventory(inventory);
-    const safeComposition = Array.isArray(composition) ? composition : [];
     const safeColors = Array.isArray(colors) ? colors.filter((item) => typeof item === "string" && item.trim()) : [];
     const totalStock = inventoryArr.length > 0
       ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
@@ -1088,7 +1066,6 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
         subcategory: typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null,
         stock: totalStock,
         fabric: typeof fabric === "string" && fabric.trim() ? fabric.trim() : null,
-        composition: safeComposition.length > 0 ? JSON.stringify(safeComposition) : null,
         careInstructions: typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null,
         colors: safeColors.length > 0 ? JSON.stringify(safeColors) : null,
       },
@@ -1103,7 +1080,7 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
 app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
   try {
     const productId = Number(req.params.id);
-    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors } = req.body;
     const data = {};
 
     if (name !== undefined) data.name = String(name).trim();
@@ -1128,10 +1105,6 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
     if (category !== undefined) data.category = String(category).trim();
     if (subcategory !== undefined) data.subcategory = typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null;
     if (fabric !== undefined) data.fabric = typeof fabric === "string" && fabric.trim() ? fabric.trim() : null;
-    if (composition !== undefined) {
-      const safeComposition = Array.isArray(composition) ? composition : [];
-      data.composition = safeComposition.length > 0 ? JSON.stringify(safeComposition) : null;
-    }
     if (careInstructions !== undefined) {
       data.careInstructions = typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null;
     }

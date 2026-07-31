@@ -16,8 +16,6 @@ const prisma = new PrismaClient();
 function productRowForDb(p) {
   return {
     ...p,
-    composition:
-      p.composition != null ? JSON.stringify(p.composition) : null,
     colors: p.colors != null ? JSON.stringify(p.colors) : null,
   };
 }
@@ -32,8 +30,7 @@ const products = [
     subcategory: "Shirts",
     stock: 10,
     fabric:
-      "Combed cotton poplin, plain weave—light, crisp, and breathable.",
-    composition: [{ fiber: "Cotton", percent: 100 }],
+      "100% cotton poplin, plain weave—light, crisp, and breathable.",
     careInstructions:
       "Machine wash cold, similar colors.\nTumble dry low or line dry.\nWarm iron on cotton setting if needed.\nDo not bleach.",
     colors: ["White", "Sky blue", "Black"],
@@ -46,8 +43,7 @@ const products = [
     category: "Tops",
     subcategory: "Shirts",
     stock: 20,
-    fabric: "Ring-spun combed cotton jersey.",
-    composition: [{ fiber: "Cotton", percent: 100 }],
+    fabric: "100% cotton, ring-spun combed jersey.",
     careInstructions:
       "Machine wash cold.\nTumble dry low.\nDo not bleach.\nCool iron if needed.",
     colors: ["White", "Black", "Heather grey"],
@@ -61,11 +57,8 @@ const products = [
     category: "Bottoms",
     subcategory: "Pants",
     stock: 14,
-    fabric: "Soft cotton twill with a touch of stretch for ease when you sit and move.",
-    composition: [
-      { fiber: "Cotton", percent: 97 },
-      { fiber: "Elastane", percent: 3 },
-    ],
+    fabric:
+      "97% cotton, 3% elastane twill with a touch of stretch for ease when you sit and move.",
     careInstructions:
       "Machine wash cold with like colors.\nTumble dry low.\nWarm iron if needed.\nDo not bleach.",
     colors: ["Black", "Khaki", "Navy"],
@@ -79,11 +72,8 @@ const products = [
     category: "Bottoms",
     subcategory: "Joggers",
     stock: 16,
-    fabric: "Mid-weight cotton–poly fleece with a smooth outside and soft brushed interior.",
-    composition: [
-      { fiber: "Cotton", percent: 80 },
-      { fiber: "Polyester", percent: 20 },
-    ],
+    fabric:
+      "80% cotton, 20% polyester mid-weight fleece with a smooth outside and soft brushed interior.",
     careInstructions:
       "Machine wash cold, inside out, with like colors.\nTumble dry low.\nDo not bleach.",
     colors: ["Black", "Charcoal", "Oatmeal"],
@@ -96,11 +86,7 @@ const products = [
     category: "Tops",
     subcategory: "Hoodies",
     stock: 18,
-    fabric: "Brushed-back cotton–poly fleece.",
-    composition: [
-      { fiber: "Cotton", percent: 80 },
-      { fiber: "Polyester", percent: 20 },
-    ],
+    fabric: "80% cotton, 20% polyester brushed-back fleece.",
     careInstructions:
       "Machine wash cold, inside out, with like colors.\nTumble dry low; remove promptly to reduce pilling.\nDo not iron prints or drawcord tips.\nDo not bleach.",
     colors: ["Black", "Grey", "Oatmeal"],
@@ -114,8 +100,7 @@ const products = [
     category: "Scarves",
     subcategory: "Wool",
     stock: 30,
-    fabric: "Lightweight merino wool in a plain weave.",
-    composition: [{ fiber: "Merino wool", percent: 100 }],
+    fabric: "100% merino wool, lightweight plain weave.",
     careInstructions:
       "Hand wash cold with wool detergent, or dry clean.\nLay flat to dry; do not wring or tumble dry.\nSteam to refresh between wears.\nStore folded.",
     colors: ["Camel", "Charcoal", "Ivory"],
@@ -128,8 +113,8 @@ const products = [
     category: "Accessories",
     subcategory: "Belts",
     stock: 22,
-    fabric: "Full-grain cowhide strap with a brushed zinc-alloy buckle.",
-    composition: [{ fiber: "Cowhide leather (strap)", percent: 100 }],
+    fabric:
+      "Full-grain cowhide leather strap (100%) with a brushed zinc-alloy buckle.",
     careInstructions:
       "Leather: wipe with a soft dry or slightly damp cloth; air dry away from radiators.\nCondition 1–2× per year with a neutral leather cream.\nDo not soak or machine wash.\nHardware may be wiped dry; avoid harsh solvents.",
     colors: ["Black", "Brown", "Tan"],
@@ -143,8 +128,7 @@ const products = [
     category: "Accessories",
     subcategory: "Bags",
     stock: 16,
-    fabric: "Heavy plain-weave cotton canvas.",
-    composition: [{ fiber: "Cotton", percent: 100 }],
+    fabric: "100% cotton, heavy plain-weave canvas.",
     careInstructions:
       "Spot clean first; if needed, hand wash cold with mild detergent.\nAir dry flat; canvas may shrink slightly on hot washes.\nDo not bleach.\nIron medium if wrinkled.",
     colors: ["Natural", "Black", "Olive"],
@@ -157,11 +141,7 @@ const products = [
     category: "Tops",
     subcategory: "Sweaters",
     stock: 12,
-    fabric: "Cotton–poly French terry (loop back, smooth face).",
-    composition: [
-      { fiber: "Cotton", percent: 85 },
-      { fiber: "Polyester", percent: 15 },
-    ],
+    fabric: "85% cotton, 15% polyester French terry (loop back, smooth face).",
     careInstructions:
       "Machine wash cold, gentle cycle.\nTumble dry low.\nDo not bleach.\nSteam or cool iron.",
     colors: ["Heather grey", "Black", "Cream"],
@@ -175,12 +155,8 @@ const products = [
     category: "Gloves & Mittens",
     subcategory: "Gloves",
     stock: 24,
-    fabric: "Wool-rich rib knit with nylon for durability and a little stretch.",
-    composition: [
-      { fiber: "Wool", percent: 70 },
-      { fiber: "Nylon", percent: 25 },
-      { fiber: "Elastane", percent: 5 },
-    ],
+    fabric:
+      "70% wool, 25% nylon, 5% elastane rib knit—durable with a little stretch.",
     careInstructions:
       "Hand wash cold with wool detergent.\nLay flat to dry; do not wring.\nDo not tumble dry.\nStore flat or folded—avoid hanging knits.",
     colors: ["Black", "Charcoal", "Cream"],
@@ -194,12 +170,8 @@ const products = [
     category: "Gloves & Mittens",
     subcategory: "Mittens",
     stock: 28,
-    fabric: "Dense wool–acrylic knit with a smooth, low-pill face.",
-    composition: [
-      { fiber: "Wool", percent: 45 },
-      { fiber: "Acrylic", percent: 50 },
-      { fiber: "Elastane", percent: 5 },
-    ],
+    fabric:
+      "45% wool, 50% acrylic, 5% elastane dense knit with a smooth, low-pill face.",
     careInstructions:
       "Hand wash cold with mild detergent.\nLay flat to dry; reshape while damp.\nDo not tumble dry.\nDo not bleach.",
     colors: ["Black", "Charcoal", "Rose"],
@@ -213,12 +185,8 @@ const products = [
     category: "Scarves",
     subcategory: "Knit",
     stock: 22,
-    fabric: "Mid-weight acrylic–wool blend knit for warmth without bulk.",
-    composition: [
-      { fiber: "Acrylic", percent: 55 },
-      { fiber: "Wool", percent: 40 },
-      { fiber: "Elastane", percent: 5 },
-    ],
+    fabric:
+      "55% acrylic, 40% wool, 5% elastane mid-weight knit for warmth without bulk.",
     careInstructions:
       "Hand wash cold with mild detergent.\nLay flat to dry; reshape while damp.\nDo not tumble dry.\nStore folded.",
     colors: ["Ivory", "Blush", "Slate"],
@@ -361,7 +329,6 @@ async function main() {
         category: row.category,
         subcategory: row.subcategory ?? null,
         fabric: row.fabric ?? null,
-        composition: row.composition ?? null,
         careInstructions: row.careInstructions ?? null,
         colors: row.colors ?? null,
       },
@@ -377,7 +344,6 @@ async function main() {
           subcategory: p.subcategory ?? null,
           stock: p.stock,
           fabric: p.fabric ?? null,
-          composition: row.composition ?? null,
           careInstructions: p.careInstructions ?? null,
           colors: row.colors ?? null,
         },

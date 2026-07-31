@@ -43,8 +43,7 @@ const Login = () => {
     const raw = localStorage.getItem("user");
     if (raw) {
       const user = JSON.parse(raw);
-      toast.success("You are already logged in");
-      navigate(user.role === "admin" ? "/admin" : "/user-profile");
+      navigate(user.role === "admin" ? "/admin" : "/user-profile", { replace: true });
     }
   }, [navigate]);
 

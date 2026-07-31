@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiDollarSign, FiShoppingBag, FiUsers, FiBox, FiArrowRight } from "react-icons/fi";
+import { FiDollarSign, FiShoppingBag, FiUsers, FiBox, FiArrowRight, FiLock } from "react-icons/fi";
+import toast from "react-hot-toast";
 import adminFetch from "../../axios/adminFetch";
 
 interface DashboardStats {
@@ -91,6 +92,9 @@ function StatCard({
 const AdminDashboard = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -106,6 +110,36 @@ const AdminDashboard = () => {
       active = false;
     };
   }, []);
+
+  const handlePasswordChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!currentPassword.trim() || !newPassword.trim()) {
+      toast.error("Enter your current password and a new password.");
+      return;
+    }
+
+    if (newPassword.trim().length < 6) {
+      toast.error("New password must be at least 6 characters.");
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      await adminFetch.put("/password", {
+        currentPassword: currentPassword.trim(),
+        newPassword: newPassword.trim(),
+      });
+      toast.success("Password updated successfully");
+      setCurrentPassword("");
+      setNewPassword("");
+    } catch (error: any) {
+      const message = error?.response?.data?.error || "Failed to update password";
+      toast.error(message);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   if (loading) {
     return <p className="text-sm text-gray-400">Loading dashboard…</p>;
@@ -125,6 +159,47 @@ const AdminDashboard = () => {
       </div>
 
       <RevenueChart data={stats.monthlyRevenue} />
+
+      <div className="bg-white border border-gray-100 rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <FiLock className="text-[#A78BFA]" size={18} />
+          <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wider">Change Password</h3>
+        </div>
+
+        <form onSubmit={handlePasswordChange} className="grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm text-gray-700">
+            Current Password
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              className="border border-gray-200 rounded px-3 py-2 outline-none focus:border-[#A78BFA]"
+              placeholder="Enter current password"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-gray-700">
+            New Password
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              className="border border-gray-200 rounded px-3 py-2 outline-none focus:border-[#A78BFA]"
+              placeholder="Enter new password"
+            />
+          </label>
+
+          <div className="md:col-span-2">
+            <button
+              type="submit"
+              disabled={changingPassword}
+              className="bg-[#0f0f0f] text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-60"
+            >
+              {changingPassword ? "Updating..." : "Update Password"}
+            </button>
+          </div>
+        </form>
+      </div>
 
       <div className="bg-white border border-gray-100 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">

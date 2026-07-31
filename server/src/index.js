@@ -901,6 +901,40 @@ async function requireAdmin(req, res, next) {
   }
 }
 
+app.put("/api/admin/password", requireAdmin, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Current and new password are required" });
+    }
+
+    const currentValue = String(currentPassword).trim();
+    const nextValue = String(newPassword).trim();
+    if (!currentValue || !nextValue) {
+      return res.status(400).json({ error: "Current and new password are required" });
+    }
+    if (nextValue.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+
+    const passwordMatches = await bcrypt.compare(currentValue, req.adminUser.password);
+    if (!passwordMatches) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(nextValue, 10);
+    await prisma.user.update({
+      where: { id: req.adminUser.id },
+      data: { password: hashedPassword },
+    });
+
+    return res.json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to update password" });
+  }
+});
+
 // ========== Admin Stats ==========
 
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
@@ -998,6 +1032,22 @@ app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
   }
 });
 
+function normalizeAdminProductInventory(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row) => ({
+      size: typeof row?.size === "string" ? row.size.trim() : String(row?.size ?? ""),
+      color: typeof row?.color === "string" ? row.color.trim() : String(row?.color ?? ""),
+      stock: Number(row?.stock) || 0,
+    }))
+    .filter((row) => row.size || row.color || row.stock > 0);
+}
+
+function normalizeAdminProductImages(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim());
+}
+
 // ========== Admin Products ==========
 
 app.get("/api/admin/products", requireAdmin, async (req, res) => {
@@ -1016,32 +1066,36 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
     if (!name || price === undefined || !category) {
       return res.status(400).json({ error: "name, price, and category are required" });
     }
-    const imageArr = Array.isArray(images) ? images : [];
-    const primaryUrl = imageArr[0] || imageUrl || "";
-    const inventoryArr = Array.isArray(inventory) ? inventory : [];
+
+    const imageArr = normalizeAdminProductImages(images);
+    const primaryUrl = imageArr[0] || String(imageUrl || "").trim();
+    const inventoryArr = normalizeAdminProductInventory(inventory);
+    const safeComposition = Array.isArray(composition) ? composition : [];
+    const safeColors = Array.isArray(colors) ? colors.filter((item) => typeof item === "string" && item.trim()) : [];
     const totalStock = inventoryArr.length > 0
       ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
       : Number(stock) || 0;
+
     const product = await prisma.product.create({
       data: {
-        name,
-        description: description || "",
+        name: String(name).trim(),
+        description: String(description || "").trim(),
         price: Number(price),
         imageUrl: primaryUrl,
         images: imageArr.length > 0 ? JSON.stringify(imageArr) : null,
         inventory: inventoryArr.length > 0 ? JSON.stringify(inventoryArr) : null,
-        category,
-        subcategory: subcategory || null,
+        category: String(category).trim(),
+        subcategory: typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null,
         stock: totalStock,
-        fabric: fabric || null,
-        composition: composition ? JSON.stringify(composition) : null,
-        careInstructions: careInstructions || null,
-        colors: colors ? JSON.stringify(colors) : null,
+        fabric: typeof fabric === "string" && fabric.trim() ? fabric.trim() : null,
+        composition: safeComposition.length > 0 ? JSON.stringify(safeComposition) : null,
+        careInstructions: typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null,
+        colors: safeColors.length > 0 ? JSON.stringify(safeColors) : null,
       },
     });
     res.status(201).json(product);
   } catch (error) {
-    console.error(error);
+    console.error("Failed to create product:", error);
     res.status(500).json({ error: "Failed to create product" });
   }
 });
@@ -1051,18 +1105,19 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
     const productId = Number(req.params.id);
     const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, composition, careInstructions, colors } = req.body;
     const data = {};
-    if (name !== undefined) data.name = name;
-    if (description !== undefined) data.description = description;
+
+    if (name !== undefined) data.name = String(name).trim();
+    if (description !== undefined) data.description = String(description || "").trim();
     if (price !== undefined) data.price = Number(price);
     if (images !== undefined) {
-      const imageArr = Array.isArray(images) ? images : [];
+      const imageArr = normalizeAdminProductImages(images);
       data.images = imageArr.length > 0 ? JSON.stringify(imageArr) : null;
-      data.imageUrl = imageArr[0] || imageUrl || "";
+      data.imageUrl = imageArr[0] || String(imageUrl || "").trim();
     } else if (imageUrl !== undefined) {
-      data.imageUrl = imageUrl;
+      data.imageUrl = String(imageUrl || "").trim();
     }
     if (inventory !== undefined) {
-      const inventoryArr = Array.isArray(inventory) ? inventory : [];
+      const inventoryArr = normalizeAdminProductInventory(inventory);
       data.inventory = inventoryArr.length > 0 ? JSON.stringify(inventoryArr) : null;
       data.stock = inventoryArr.length > 0
         ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
@@ -1070,17 +1125,25 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
     } else if (stock !== undefined) {
       data.stock = Number(stock);
     }
-    if (category !== undefined) data.category = category;
-    if (subcategory !== undefined) data.subcategory = subcategory || null;
-    if (fabric !== undefined) data.fabric = fabric || null;
-    if (composition !== undefined) data.composition = composition ? JSON.stringify(composition) : null;
-    if (careInstructions !== undefined) data.careInstructions = careInstructions || null;
-    if (colors !== undefined) data.colors = colors ? JSON.stringify(colors) : null;
+    if (category !== undefined) data.category = String(category).trim();
+    if (subcategory !== undefined) data.subcategory = typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null;
+    if (fabric !== undefined) data.fabric = typeof fabric === "string" && fabric.trim() ? fabric.trim() : null;
+    if (composition !== undefined) {
+      const safeComposition = Array.isArray(composition) ? composition : [];
+      data.composition = safeComposition.length > 0 ? JSON.stringify(safeComposition) : null;
+    }
+    if (careInstructions !== undefined) {
+      data.careInstructions = typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null;
+    }
+    if (colors !== undefined) {
+      const safeColors = Array.isArray(colors) ? colors.filter((item) => typeof item === "string" && item.trim()) : [];
+      data.colors = safeColors.length > 0 ? JSON.stringify(safeColors) : null;
+    }
 
     const product = await prisma.product.update({ where: { id: productId }, data });
     res.json(product);
   } catch (error) {
-    console.error(error);
+    console.error("Failed to update product:", error);
     res.status(500).json({ error: "Failed to update product" });
   }
 });

@@ -7,6 +7,7 @@ import { formatCategorySlug } from "../utils/formatCategoryName";
 import { slugify } from "../utils/slugify";
 import toast from "react-hot-toast";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import customFetch from "../axios/custom";
 
 function resolveImage(image: string | undefined | null): string {
   if (!image) return "";
@@ -132,30 +133,20 @@ const SingleProduct = () => {
   useEffect(() => {
     const baseId = params.id?.split("-")[0] ?? "";
 
-    const fetchSingleProduct = async () => {
-      try {
-        const response = await fetch("http://localhost:4000/api/products");
-        const data = await response.json();
-        const foundProduct = data.find(
-          (product: Product) => String(product.id) === String(baseId)
-        );
-        setSingleProduct(foundProduct || null);
-      } catch (error) {
-        console.error("Failed to fetch single product:", error);
-      }
-    };
-
     const fetchProducts = async () => {
       try {
-        const response = await fetch("http://localhost:4000/api/products");
-        const data = await response.json();
+        const response = await customFetch.get<Product[]>("/products");
+        const data = response.data;
         setProducts(data);
+        const foundProduct = data.find(
+          (product) => String(product.id) === String(baseId)
+        );
+        setSingleProduct(foundProduct || null);
       } catch (error) {
         console.error("Failed to fetch products:", error);
       }
     };
 
-    fetchSingleProduct();
     fetchProducts();
   }, [params.id]);
 

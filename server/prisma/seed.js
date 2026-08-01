@@ -209,58 +209,13 @@ const RETIRED_PRODUCT_NAMES = [
 ];
 
 async function main() {
-  const productCount = await prisma.product.count();
-  const orderItemCount = await prisma.orderItem.count();
-  const expected = products.length;
-  const missingSubcategory = await prisma.product.count({
-    where: { subcategory: null },
-  });
-  const staleLegacyAccessory = await prisma.product.findFirst({
-    where: {
-      category: "Accessories",
-      OR: [
-        { subcategory: "Gloves" },
-        { subcategory: "Mittens" },
-        { subcategory: "Scarves" },
-      ],
-    },
-  });
-
-  const REQUIRED_TOP_LEVEL = [
-    "Tops",
-    "Bottoms",
-    "Accessories",
-    "Gloves & Mittens",
-    "Scarves",
-  ];
-  const distinctRows = await prisma.product.groupBy({
-    by: ["category"],
-  });
-  const presentCategories = new Set(distinctRows.map((r) => r.category));
-  const missingFiveWaySplit = REQUIRED_TOP_LEVEL.some(
-    (c) => !presentCategories.has(c)
-  );
-
-  const shouldReseedProducts =
-    !orderItemCount &&
-    (productCount < expected ||
-      (productCount > 0 && missingSubcategory > 0) ||
-      staleLegacyAccessory != null ||
-      (productCount > 0 && missingFiveWaySplit));
-
-  if (shouldReseedProducts) {
-    await prisma.product.deleteMany({});
-    await prisma.product.createMany({
-      data: products.map(productRowForDb),
-    });
-    console.log(`Seeded ${products.length} products (full catalog with subcategories).`);
-  } else if (productCount < expected && orderItemCount > 0) {
-    console.warn(
-      `Only ${productCount} products but seed defines ${expected}, and orders reference products. Run "npx prisma migrate reset" in server/ (or clear orders) then "npm run db:seed" to get the full catalog.`
-    );
-  } else {
-    console.log("Product catalog already complete, skipping product seed.");
-  }
+  // Product sync is handled entirely by the per-product upsert loop below
+  // (create if missing by name, update known fields if present — stock is
+  // left alone). We never bulk-delete products here: this used to run a
+  // wholesale `deleteMany({}) + createMany` "full reseed" whenever the
+  // catalog looked stale (missing subcategory, legacy category names,
+  // etc.), which silently destroyed any product added through the admin
+  // panel that wasn't in this file's hardcoded list.
 
   const demoEmail = "demo@example.com";
   const existing = await prisma.user.findUnique({ where: { email: demoEmail } });
@@ -319,13 +274,16 @@ async function main() {
 
   for (const p of products) {
     const row = productRowForDb(p);
+    // Note: stock is intentionally not synced here — it's admin-managed
+    // (via inventory rows) and shouldn't be reset to the seed default
+    // every time the app starts. It's only set below when a product is
+    // first created.
     const updated = await prisma.product.updateMany({
       where: { name: p.name },
       data: {
         imageUrl: row.imageUrl,
         description: row.description,
         price: row.price,
-        stock: row.stock,
         category: row.category,
         subcategory: row.subcategory ?? null,
         fabric: row.fabric ?? null,

@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { formatCategoryName } from "../utils/formatCategoryName";
+import QuickAddToCartModal from "./QuickAddToCartModal";
 
 function resolveImage(image: string): string {
   if (!image) return "";
@@ -15,6 +17,8 @@ const ProductItem = ({
   price,
   popularity,
   stock,
+  description,
+  inventory,
 }: {
   id: string;
   image: string;
@@ -23,9 +27,10 @@ const ProductItem = ({
   price: number;
   popularity: number;
   stock: number;
+  description?: string;
+  inventory?: Array<{ size: string; color: string; stock: number }> | null;
 }) => {
-  void popularity;
-  void stock;
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   return (
     <div className="flex w-full min-w-0 max-w-[400px] flex-col gap-2 justify-center">
@@ -58,13 +63,30 @@ const ProductItem = ({
         >
           View product
         </Link>
-        <Link
-          to={`/product/${id}`}
+        <button
+          type="button"
+          onClick={() => setQuickAddOpen(true)}
           className="bg-white text-black text-center text-xl border border-[rgba(0, 0, 0, 0.40)] font-normal tracking-[0.6px] leading-[72px] w-full h-12 flex items-center justify-center max-md:text-base"
         >
-          Learn more
-        </Link>
+          Add to cart
+        </button>
       </div>
+
+      <QuickAddToCartModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        product={{
+          id,
+          title,
+          image,
+          category,
+          price,
+          popularity,
+          stock,
+          description,
+          inventory,
+        }}
+      />
     </div>
   );
 };

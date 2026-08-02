@@ -1,6 +1,7 @@
 export { default as HomeLayout } from "./HomeLayout";
 export { default as Landing } from "./Landing";
 export { default as Shop } from "./Shop";
+export { default as Collection } from "./Collection";
 export { default as SingleProduct } from "./SingleProduct";
 export { default as Cart } from "./Cart";
 export { default as Checkout } from "./Checkout";
@@ -15,4 +16,5 @@ export { default as AdminLayout } from "./admin/AdminLayout";
 export { default as AdminDashboard } from "./admin/AdminDashboard";
 export { default as AdminOrders } from "./admin/AdminOrders";
 export { default as AdminProducts } from "./admin/AdminProducts";
+export { default as AdminCollections } from "./admin/AdminCollections";
 export { default as AdminCustomers } from "./admin/AdminCustomers";

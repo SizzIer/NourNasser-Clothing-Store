@@ -46,6 +46,52 @@ function slugify(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeWhitespace(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** "tops" / "TOPS" → "Tops"; keeps multi-word labels readable. */
+function toDisplayCase(value) {
+  const cleaned = normalizeWhitespace(value);
+  if (!cleaned) return "";
+  return cleaned
+    .split(" ")
+    .map((word) => {
+      if (word === "&") return word;
+      if (word.length <= 1) return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+function normalizeSizeLabel(value) {
+  return normalizeWhitespace(value).toUpperCase();
+}
+
+function normalizeColorLabel(value) {
+  return toDisplayCase(value);
+}
+
+/**
+ * Reuse an existing label when slug matches (case/spacing variants),
+ * otherwise fall back to display-case. Prefer `preferred` list first
+ * (e.g. CATEGORY_ORDER) so catalog names stay stable.
+ */
+function resolveLabel(input, existingLabels, preferred = []) {
+  const cleaned = normalizeWhitespace(input);
+  if (!cleaned) return "";
+  const want = slugify(cleaned);
+  for (const name of preferred) {
+    if (slugify(name) === want) return name;
+  }
+  for (const name of existingLabels) {
+    if (name && slugify(name) === want) return name;
+  }
+  return toDisplayCase(cleaned);
+}
+
 const app = express();
 const prisma = new PrismaClient();
 
@@ -224,20 +270,33 @@ app.get("/api/categories", async (req, res) => {
     const products = await prisma.product.findMany({
       select: { category: true, subcategory: true },
     });
+    // Group by slug so "Tops" / "tops" / " TOPS " collapse into one nav entry.
     const map = new Map();
     for (const p of products) {
-      if (!map.has(p.category)) {
-        map.set(p.category, { subcategories: new Set(), count: 0 });
+      if (!p.category) continue;
+      const catSlug = slugify(p.category);
+      if (!catSlug) continue;
+      if (!map.has(catSlug)) {
+        map.set(catSlug, {
+          name: resolveLabel(p.category, [], CATEGORY_ORDER),
+          subcategories: new Map(),
+          count: 0,
+        });
       }
-      const entry = map.get(p.category);
+      const entry = map.get(catSlug);
       entry.count += 1;
-      if (p.subcategory) entry.subcategories.add(p.subcategory);
+      if (p.subcategory) {
+        const subSlug = slugify(p.subcategory);
+        if (subSlug && !entry.subcategories.has(subSlug)) {
+          entry.subcategories.set(subSlug, toDisplayCase(p.subcategory));
+        }
+      }
     }
-    const list = [...map.entries()].map(([name, data]) => ({
-      name,
-      slug: slugify(name),
+    const list = [...map.entries()].map(([slug, data]) => ({
+      name: data.name,
+      slug,
       productCount: data.count,
-      subcategories: [...data.subcategories].sort((a, b) =>
+      subcategories: [...data.subcategories.values()].sort((a, b) =>
         a.localeCompare(b)
       ),
     }));
@@ -301,6 +360,173 @@ function fabricSearchBlob(product) {
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
+function formatStorefrontProduct(product) {
+  const rawImages = parseColors(product.images);
+  const resolvedImages =
+    rawImages && rawImages.length > 0
+      ? rawImages.map(resolveImagePath)
+      : [resolveImagePath(product.imageUrl)].filter(Boolean);
+  const inventoryRows = parseJsonArray(product.inventory);
+  const totalStock =
+    inventoryRows && inventoryRows.length > 0
+      ? inventoryRows.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
+      : product.stock;
+  return {
+    id: product.id,
+    title: product.name,
+    description: product.description,
+    image: resolveImagePath(product.imageUrl),
+    images: resolvedImages,
+    category: product.category.toLowerCase(),
+    categorySlug: slugify(product.category),
+    subcategory: product.subcategory
+      ? product.subcategory.toLowerCase()
+      : null,
+    fabric: product.fabric,
+    careInstructions: product.careInstructions,
+    colors: parseColors(product.colors),
+    inventory: inventoryRows,
+    price: product.price,
+    popularity: 5,
+    stock: totalStock,
+  };
+}
+
+async function uniqueCollectionSlug(name, excludeId = null) {
+  // Reserve "featured" for GET /api/collections/featured
+  let base = slugify(name) || "collection";
+  if (base === "featured") base = "featured-collection";
+  let slug = base;
+  let n = 2;
+  while (true) {
+    const existing = await prisma.collection.findUnique({ where: { slug } });
+    if (!existing || (excludeId != null && existing.id === excludeId)) {
+      return slug;
+    }
+    slug = `${base}-${n++}`;
+  }
+}
+
+async function ensureExclusiveFeatured(collectionId) {
+  await prisma.$transaction([
+    prisma.collection.updateMany({
+      where: { id: { not: collectionId } },
+      data: { isFeatured: false },
+    }),
+    prisma.collection.update({
+      where: { id: collectionId },
+      data: { isFeatured: true },
+    }),
+  ]);
+}
+
+function normalizeCollectionProductIds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const ids = [];
+  for (const entry of value) {
+    const id = Number(entry);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+async function replaceCollectionProducts(collectionId, productIds) {
+  const requested = normalizeCollectionProductIds(productIds);
+  const existingProducts =
+    requested.length === 0
+      ? []
+      : await prisma.product.findMany({
+          where: { id: { in: requested } },
+          select: { id: true },
+        });
+  const valid = new Set(existingProducts.map((p) => p.id));
+  const ids = requested.filter((id) => valid.has(id));
+
+  await prisma.collectionProduct.deleteMany({ where: { collectionId } });
+  if (ids.length === 0) return;
+  await prisma.collectionProduct.createMany({
+    data: ids.map((productId, index) => ({
+      collectionId,
+      productId,
+      sortOrder: index,
+    })),
+  });
+}
+
+/** Add/remove product↔collection links without reshuffling other members' order. */
+async function syncProductCollections(productId, collectionIds) {
+  const requested = normalizeCollectionProductIds(collectionIds);
+  const existingCollections =
+    requested.length === 0
+      ? []
+      : await prisma.collection.findMany({
+          where: { id: { in: requested } },
+          select: { id: true },
+        });
+  const validIds = existingCollections.map((c) => c.id);
+  const want = new Set(validIds);
+
+  const current = await prisma.collectionProduct.findMany({
+    where: { productId },
+  });
+  const currentByCollection = new Map(
+    current.map((row) => [row.collectionId, row])
+  );
+
+  const toRemove = current
+    .filter((row) => !want.has(row.collectionId))
+    .map((row) => row.id);
+  if (toRemove.length > 0) {
+    await prisma.collectionProduct.deleteMany({
+      where: { id: { in: toRemove } },
+    });
+  }
+
+  for (const collectionId of validIds) {
+    if (currentByCollection.has(collectionId)) continue;
+    const max = await prisma.collectionProduct.aggregate({
+      where: { collectionId },
+      _max: { sortOrder: true },
+    });
+    await prisma.collectionProduct.create({
+      data: {
+        collectionId,
+        productId,
+        sortOrder: (max._max.sortOrder ?? -1) + 1,
+      },
+    });
+  }
+}
+
+function serializeAdminCollection(collection) {
+  const rows = [...(collection.products || [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder
+  );
+  return {
+    id: collection.id,
+    name: collection.name,
+    slug: collection.slug,
+    description: collection.description,
+    isFeatured: collection.isFeatured,
+    createdAt: collection.createdAt,
+    productCount: rows.length,
+    productIds: rows.map((row) => row.productId),
+    products: rows
+      .map((row) => row.product)
+      .filter(Boolean)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        imageUrl: resolveImagePath(p.imageUrl),
+        price: p.price,
+        category: p.category,
+      })),
+  };
+}
+
 app.get("/api/products", async (req, res) => {
   try {
     const rawFabric = req.query.fabric;
@@ -315,40 +541,96 @@ app.get("/api/products", async (req, res) => {
       products = products.filter((p) => fabricSearchBlob(p).includes(n));
     }
 
-    const formattedProducts = products.map((product) => {
-      const rawImages = parseColors(product.images);
-      const resolvedImages = rawImages && rawImages.length > 0
-        ? rawImages.map(resolveImagePath)
-        : [resolveImagePath(product.imageUrl)].filter(Boolean);
-      const inventoryRows = parseJsonArray(product.inventory);
-      const totalStock = inventoryRows && inventoryRows.length > 0
-        ? inventoryRows.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
-        : product.stock;
-      return {
-        id: product.id,
-        title: product.name,
-        description: product.description,
-        image: resolveImagePath(product.imageUrl),
-        images: resolvedImages,
-        category: product.category.toLowerCase(),
-        categorySlug: slugify(product.category),
-        subcategory: product.subcategory
-          ? product.subcategory.toLowerCase()
-          : null,
-        fabric: product.fabric,
-        careInstructions: product.careInstructions,
-        colors: parseColors(product.colors),
-        inventory: inventoryRows,
-        price: product.price,
-        popularity: 5,
-        stock: totalStock,
-      };
-    });
-
-    res.json(formattedProducts);
+    res.json(products.map(formatStorefrontProduct));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+// ========== Public Collections ==========
+
+app.get("/api/collections", async (_req, res) => {
+  try {
+    const collections = await prisma.collection.findMany({
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      include: {
+        products: { select: { productId: true } },
+      },
+    });
+    res.json(
+      collections.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        description: c.description,
+        isFeatured: c.isFeatured,
+        productCount: c.products.length,
+      }))
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch collections" });
+  }
+});
+
+app.get("/api/collections/featured", async (_req, res) => {
+  try {
+    const collection = await prisma.collection.findFirst({
+      where: { isFeatured: true },
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: { product: true },
+        },
+      },
+    });
+    if (!collection) {
+      return res.json(null);
+    }
+    res.json({
+      id: collection.id,
+      name: collection.name,
+      slug: collection.slug,
+      description: collection.description,
+      isFeatured: collection.isFeatured,
+      products: collection.products.map((row) =>
+        formatStorefrontProduct(row.product)
+      ),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch featured collection" });
+  }
+});
+
+app.get("/api/collections/:slug", async (req, res) => {
+  try {
+    const collection = await prisma.collection.findUnique({
+      where: { slug: String(req.params.slug) },
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: { product: true },
+        },
+      },
+    });
+    if (!collection) {
+      return res.status(404).json({ error: "Collection not found" });
+    }
+    res.json({
+      id: collection.id,
+      name: collection.name,
+      slug: collection.slug,
+      description: collection.description,
+      isFeatured: collection.isFeatured,
+      products: collection.products.map((row) =>
+        formatStorefrontProduct(row.product)
+      ),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch collection" });
   }
 });
 
@@ -1013,13 +1295,70 @@ app.put("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
 
 function normalizeAdminProductInventory(value) {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((row) => ({
-      size: typeof row?.size === "string" ? row.size.trim() : String(row?.size ?? ""),
-      color: typeof row?.color === "string" ? row.color.trim() : String(row?.color ?? ""),
-      stock: Number(row?.stock) || 0,
-    }))
-    .filter((row) => row.size || row.color || row.stock > 0);
+  const merged = new Map();
+  for (const row of value) {
+    const size = normalizeSizeLabel(
+      typeof row?.size === "string" ? row.size : String(row?.size ?? "")
+    );
+    const color = normalizeColorLabel(
+      typeof row?.color === "string" ? row.color : String(row?.color ?? "")
+    );
+    const stock = Number(row?.stock) || 0;
+    if (!size && !color && stock <= 0) continue;
+    // Collapse "m"/"M" + "black"/"Black" into one SKU.
+    const key = `${size.toLowerCase()}|${slugify(color)}`;
+    const prev = merged.get(key);
+    if (prev) {
+      prev.stock += stock;
+    } else {
+      merged.set(key, { size, color, stock });
+    }
+  }
+  return [...merged.values()];
+}
+
+function normalizeAdminProductColors(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const color = normalizeColorLabel(item);
+    if (!color) continue;
+    const key = slugify(color);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(color);
+  }
+  return result;
+}
+
+async function resolveProductCategoryFields(categoryInput, subcategoryInput) {
+  const existing = await prisma.product.findMany({
+    select: { category: true, subcategory: true },
+  });
+  const categoryNames = [
+    ...new Set(existing.map((p) => p.category).filter(Boolean)),
+  ];
+  const category = resolveLabel(categoryInput, categoryNames, CATEGORY_ORDER);
+  if (!category) {
+    return { category: "", subcategory: null };
+  }
+
+  const subcategoryNames = [
+    ...new Set(
+      existing
+        .filter((p) => p.category && slugify(p.category) === slugify(category))
+        .map((p) => p.subcategory)
+        .filter(Boolean)
+    ),
+  ];
+  const subcategoryRaw = normalizeWhitespace(subcategoryInput);
+  const subcategory = subcategoryRaw
+    ? resolveLabel(subcategoryRaw, subcategoryNames)
+    : null;
+
+  return { category, subcategory };
 }
 
 function normalizeAdminProductImages(value) {
@@ -1031,8 +1370,18 @@ function normalizeAdminProductImages(value) {
 
 app.get("/api/admin/products", requireAdmin, async (req, res) => {
   try {
-    const products = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
-    res.json(products);
+    const products = await prisma.product.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        collections: { select: { collectionId: true } },
+      },
+    });
+    res.json(
+      products.map(({ collections, ...product }) => ({
+        ...product,
+        collectionIds: collections.map((row) => row.collectionId),
+      }))
+    );
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch products" });
@@ -1041,7 +1390,7 @@ app.get("/api/admin/products", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/products", requireAdmin, async (req, res) => {
   try {
-    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors, collectionIds } = req.body;
     if (!name || price === undefined || !category) {
       return res.status(400).json({ error: "name, price, and category are required" });
     }
@@ -1049,7 +1398,12 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
     const imageArr = normalizeAdminProductImages(images);
     const primaryUrl = imageArr[0] || String(imageUrl || "").trim();
     const inventoryArr = normalizeAdminProductInventory(inventory);
-    const safeColors = Array.isArray(colors) ? colors.filter((item) => typeof item === "string" && item.trim()) : [];
+    const safeColors = normalizeAdminProductColors(colors);
+    const { category: resolvedCategory, subcategory: resolvedSubcategory } =
+      await resolveProductCategoryFields(category, subcategory);
+    if (!resolvedCategory) {
+      return res.status(400).json({ error: "name, price, and category are required" });
+    }
     const totalStock = inventoryArr.length > 0
       ? inventoryArr.reduce((sum, row) => sum + (Number(row.stock) || 0), 0)
       : Number(stock) || 0;
@@ -1062,15 +1416,27 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
         imageUrl: primaryUrl,
         images: imageArr.length > 0 ? JSON.stringify(imageArr) : null,
         inventory: inventoryArr.length > 0 ? JSON.stringify(inventoryArr) : null,
-        category: String(category).trim(),
-        subcategory: typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null,
+        category: resolvedCategory,
+        subcategory: resolvedSubcategory,
         stock: totalStock,
         fabric: typeof fabric === "string" && fabric.trim() ? fabric.trim() : null,
         careInstructions: typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null,
         colors: safeColors.length > 0 ? JSON.stringify(safeColors) : null,
       },
     });
-    res.status(201).json(product);
+
+    if (collectionIds !== undefined) {
+      await syncProductCollections(product.id, collectionIds);
+    }
+
+    const memberships = await prisma.collectionProduct.findMany({
+      where: { productId: product.id },
+      select: { collectionId: true },
+    });
+    res.status(201).json({
+      ...product,
+      collectionIds: memberships.map((row) => row.collectionId),
+    });
   } catch (error) {
     console.error("Failed to create product:", error);
     res.status(500).json({ error: "Failed to create product" });
@@ -1080,7 +1446,7 @@ app.post("/api/admin/products", requireAdmin, async (req, res) => {
 app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
   try {
     const productId = Number(req.params.id);
-    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors } = req.body;
+    const { name, description, price, imageUrl, images, inventory, category, subcategory, stock, fabric, careInstructions, colors, collectionIds } = req.body;
     const data = {};
 
     if (name !== undefined) data.name = String(name).trim();
@@ -1102,19 +1468,51 @@ app.put("/api/admin/products/:id", requireAdmin, async (req, res) => {
     } else if (stock !== undefined) {
       data.stock = Number(stock);
     }
-    if (category !== undefined) data.category = String(category).trim();
-    if (subcategory !== undefined) data.subcategory = typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null;
+    if (category !== undefined || subcategory !== undefined) {
+      const current =
+        category === undefined || subcategory === undefined
+          ? await prisma.product.findUnique({
+              where: { id: productId },
+              select: { category: true, subcategory: true },
+            })
+          : null;
+      const resolved = await resolveProductCategoryFields(
+        category !== undefined ? category : current?.category,
+        subcategory !== undefined ? subcategory : current?.subcategory
+      );
+      if (category !== undefined) {
+        if (!resolved.category) {
+          return res.status(400).json({ error: "category is required" });
+        }
+        data.category = resolved.category;
+      }
+      if (subcategory !== undefined) {
+        data.subcategory = resolved.subcategory;
+      }
+    }
     if (fabric !== undefined) data.fabric = typeof fabric === "string" && fabric.trim() ? fabric.trim() : null;
     if (careInstructions !== undefined) {
       data.careInstructions = typeof careInstructions === "string" && careInstructions.trim() ? careInstructions.trim() : null;
     }
     if (colors !== undefined) {
-      const safeColors = Array.isArray(colors) ? colors.filter((item) => typeof item === "string" && item.trim()) : [];
+      const safeColors = normalizeAdminProductColors(colors);
       data.colors = safeColors.length > 0 ? JSON.stringify(safeColors) : null;
     }
 
     const product = await prisma.product.update({ where: { id: productId }, data });
-    res.json(product);
+
+    if (collectionIds !== undefined) {
+      await syncProductCollections(productId, collectionIds);
+    }
+
+    const memberships = await prisma.collectionProduct.findMany({
+      where: { productId },
+      select: { collectionId: true },
+    });
+    res.json({
+      ...product,
+      collectionIds: memberships.map((row) => row.collectionId),
+    });
   } catch (error) {
     console.error("Failed to update product:", error);
     res.status(500).json({ error: "Failed to update product" });
@@ -1129,6 +1527,201 @@ app.delete("/api/admin/products/:id", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+// ========== Admin Collections ==========
+
+app.get("/api/admin/collections", requireAdmin, async (_req, res) => {
+  try {
+    const collections = await prisma.collection.findMany({
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+                price: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    res.json(collections.map(serializeAdminCollection));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch collections" });
+  }
+});
+
+app.get("/api/admin/collections/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const collection = await prisma.collection.findUnique({
+      where: { id },
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+                price: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!collection) {
+      return res.status(404).json({ error: "Collection not found" });
+    }
+    res.json(serializeAdminCollection(collection));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch collection" });
+  }
+});
+
+app.post("/api/admin/collections", requireAdmin, async (req, res) => {
+  try {
+    const { name, description, isFeatured, productIds } = req.body;
+    const cleanedName = normalizeWhitespace(name);
+    if (!cleanedName) {
+      return res.status(400).json({ error: "name is required" });
+    }
+    const slug = await uniqueCollectionSlug(cleanedName);
+    const collection = await prisma.collection.create({
+      data: {
+        name: cleanedName,
+        slug,
+        description:
+          typeof description === "string" && description.trim()
+            ? description.trim()
+            : null,
+        isFeatured: false,
+      },
+    });
+
+    if (productIds !== undefined) {
+      await replaceCollectionProducts(collection.id, productIds);
+    }
+    if (isFeatured) {
+      await ensureExclusiveFeatured(collection.id);
+    }
+
+    const full = await prisma.collection.findUnique({
+      where: { id: collection.id },
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+                price: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    res.status(201).json(serializeAdminCollection(full));
+  } catch (error) {
+    console.error("Failed to create collection:", error);
+    res.status(500).json({ error: "Failed to create collection" });
+  }
+});
+
+app.put("/api/admin/collections/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await prisma.collection.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: "Collection not found" });
+    }
+
+    const { name, description, isFeatured, productIds } = req.body;
+    const data = {};
+
+    if (name !== undefined) {
+      const cleanedName = normalizeWhitespace(name);
+      if (!cleanedName) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      data.name = cleanedName;
+      if (slugify(cleanedName) !== slugify(existing.name)) {
+        data.slug = await uniqueCollectionSlug(cleanedName, id);
+      }
+    }
+    if (description !== undefined) {
+      data.description =
+        typeof description === "string" && description.trim()
+          ? description.trim()
+          : null;
+    }
+
+    if (Object.keys(data).length > 0) {
+      await prisma.collection.update({ where: { id }, data });
+    }
+    if (productIds !== undefined) {
+      await replaceCollectionProducts(id, productIds);
+    }
+    if (isFeatured === true) {
+      await ensureExclusiveFeatured(id);
+    } else if (isFeatured === false) {
+      await prisma.collection.update({
+        where: { id },
+        data: { isFeatured: false },
+      });
+    }
+
+    const full = await prisma.collection.findUnique({
+      where: { id },
+      include: {
+        products: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+                price: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    res.json(serializeAdminCollection(full));
+  } catch (error) {
+    console.error("Failed to update collection:", error);
+    res.status(500).json({ error: "Failed to update collection" });
+  }
+});
+
+app.delete("/api/admin/collections/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await prisma.collection.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete collection" });
   }
 });
 

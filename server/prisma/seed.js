@@ -13,11 +13,42 @@ if (!process.env.DATABASE_URL) {
 
 const prisma = new PrismaClient();
 
+const DEFAULT_SIZES = ["S", "M", "L", "XL"];
+
 function productRowForDb(p) {
   return {
     ...p,
     colors: p.colors != null ? JSON.stringify(p.colors) : null,
   };
+}
+
+/** Build size × color inventory rows, spreading totalStock across combos. */
+function buildInventory(colors, totalStock) {
+  if (!Array.isArray(colors) || colors.length === 0) return null;
+  const combos = [];
+  for (const color of colors) {
+    for (const size of DEFAULT_SIZES) {
+      combos.push({ size, color, stock: 0 });
+    }
+  }
+  const total = Math.max(0, Number(totalStock) || 0);
+  const base = Math.floor(total / combos.length);
+  let remainder = total % combos.length;
+  for (const row of combos) {
+    row.stock = base + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder -= 1;
+  }
+  return combos;
+}
+
+function parseInventory(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 const products = [
@@ -274,13 +305,13 @@ async function main() {
 
   for (const p of products) {
     const row = productRowForDb(p);
-    // Note: stock is intentionally not synced here — it's admin-managed
-    // (via inventory rows) and shouldn't be reset to the seed default
-    // every time the app starts. It's only set below when a product is
-    // first created.
-    const updated = await prisma.product.updateMany({
-      where: { name: p.name },
-      data: {
+    const existing = await prisma.product.findFirst({ where: { name: p.name } });
+
+    if (existing) {
+      // Note: stock / inventory are admin-managed and are not overwritten
+      // once present. We only backfill inventory when a legacy seed row
+      // still has colors but no size×color SKUs (so quick-add / PDP pickers work).
+      const data = {
         imageUrl: row.imageUrl,
         description: row.description,
         price: row.price,
@@ -289,9 +320,22 @@ async function main() {
         fabric: row.fabric ?? null,
         careInstructions: row.careInstructions ?? null,
         colors: row.colors ?? null,
-      },
-    });
-    if (updated.count === 0) {
+      };
+
+      if (!parseInventory(existing.inventory)) {
+        const inventory = buildInventory(p.colors, existing.stock || p.stock);
+        if (inventory) {
+          data.inventory = JSON.stringify(inventory);
+          data.stock = inventory.reduce((sum, r) => sum + (r.stock || 0), 0);
+          console.log(
+            `Backfilled inventory for "${p.name}" (${inventory.length} SKUs).`
+          );
+        }
+      }
+
+      await prisma.product.update({ where: { id: existing.id }, data });
+    } else {
+      const inventory = buildInventory(p.colors, p.stock);
       await prisma.product.create({
         data: {
           name: p.name,
@@ -300,12 +344,16 @@ async function main() {
           imageUrl: p.imageUrl,
           category: p.category,
           subcategory: p.subcategory ?? null,
-          stock: p.stock,
+          stock: inventory
+            ? inventory.reduce((sum, r) => sum + (r.stock || 0), 0)
+            : p.stock,
           fabric: p.fabric ?? null,
           careInstructions: p.careInstructions ?? null,
           colors: row.colors ?? null,
+          inventory: inventory ? JSON.stringify(inventory) : null,
         },
       });
+      console.log(`Created product "${p.name}".`);
     }
   }
 
@@ -315,6 +363,74 @@ async function main() {
       orderItems: { none: {} },
     },
   });
+
+  // Featured marketing collection for the home hero “See Collection” CTA.
+  const featuredNames = [
+    "Classic Tee",
+    "Essential Hoodie",
+    "Relaxed Fit Pants",
+    "Oversized Crewneck",
+    "Tote Bag",
+    "Wool Scarf",
+  ];
+  const featuredProducts = await prisma.product.findMany({
+    where: { name: { in: featuredNames } },
+    select: { id: true, name: true },
+  });
+  const byName = new Map(featuredProducts.map((p) => [p.name, p.id]));
+  const orderedIds = featuredNames
+    .map((name) => byName.get(name))
+    .filter((id) => typeof id === "number");
+
+  let newArrivals = await prisma.collection.findUnique({
+    where: { slug: "new-arrivals" },
+  });
+  if (!newArrivals) {
+    const alreadyFeatured = await prisma.collection.findFirst({
+      where: { isFeatured: true },
+      select: { id: true },
+    });
+    newArrivals = await prisma.collection.create({
+      data: {
+        name: "New Arrivals",
+        slug: "new-arrivals",
+        description: "Fresh pieces for the season — curated for Kind Stitch.",
+        // Only auto-feature when nothing else is featured yet.
+        isFeatured: !alreadyFeatured,
+      },
+    });
+    if (!alreadyFeatured) {
+      console.log('Created featured collection "New Arrivals".');
+    } else {
+      console.log('Created collection "New Arrivals".');
+    }
+  } else {
+    await prisma.collection.update({
+      where: { id: newArrivals.id },
+      data: {
+        name: "New Arrivals",
+        description:
+          newArrivals.description ||
+          "Fresh pieces for the season — curated for Kind Stitch.",
+      },
+    });
+  }
+
+  const existingMembers = await prisma.collectionProduct.count({
+    where: { collectionId: newArrivals.id },
+  });
+  if (existingMembers === 0 && orderedIds.length > 0) {
+    await prisma.collectionProduct.createMany({
+      data: orderedIds.map((productId, index) => ({
+        collectionId: newArrivals.id,
+        productId,
+        sortOrder: index,
+      })),
+    });
+    console.log(
+      `Added ${orderedIds.length} products to "New Arrivals" collection.`
+    );
+  }
 }
 
 main()

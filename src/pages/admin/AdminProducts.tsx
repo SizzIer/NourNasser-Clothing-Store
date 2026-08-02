@@ -27,6 +27,7 @@ interface AdminProduct {
   careInstructions: string | null;
   stock: number;
   createdAt: string;
+  collectionIds?: number[];
 }
 
 interface ProductFormData {
@@ -41,6 +42,7 @@ interface ProductFormData {
   fabric: string;
   careInstructions: string;
   stock: number;
+  collectionIds: number[];
 }
 
 const EMPTY_FORM: ProductFormData = {
@@ -55,6 +57,7 @@ const EMPTY_FORM: ProductFormData = {
   fabric: "",
   careInstructions: "",
   stock: 0,
+  collectionIds: [],
 };
 
 function parseProductImages(product: AdminProduct): string[] {
@@ -88,12 +91,69 @@ function computeTotalStock(inventory: InventoryRow[], manualStock: number): numb
   return manualStock;
 }
 
+const PREFERRED_CATEGORIES = [
+  "Tops",
+  "Bottoms",
+  "Accessories",
+  "Gloves & Mittens",
+  "Scarves",
+];
+
+function slugKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function uniqueBySlug(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const name of names) {
+    const cleaned = name.trim();
+    if (!cleaned) continue;
+    const key = slugKey(cleaned);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+  }
+  return result;
+}
+
+function categoryOptions(products: AdminProduct[]): string[] {
+  return uniqueBySlug([
+    ...PREFERRED_CATEGORIES,
+    ...products.map((p) => p.category),
+  ]);
+}
+
+function subcategoryOptions(
+  products: AdminProduct[],
+  category: string
+): string[] {
+  const want = slugKey(category);
+  return uniqueBySlug(
+    products
+      .filter(
+        (p) =>
+          p.subcategory &&
+          (!want || slugKey(p.category) === want)
+      )
+      .map((p) => p.subcategory as string)
+  ).sort((a, b) => a.localeCompare(b));
+}
+
 function ProductModal({
   product,
+  products,
+  collections,
   onClose,
   onSave,
 }: {
   product: AdminProduct | null;
+  products: AdminProduct[];
+  collections: Array<{ id: number; name: string; isFeatured: boolean }>;
   onClose: () => void;
   onSave: (data: ProductFormData) => Promise<void>;
 }) {
@@ -111,6 +171,7 @@ function ProductModal({
           fabric: product.fabric ?? "",
           careInstructions: product.careInstructions ?? "",
           stock: product.stock,
+          collectionIds: product.collectionIds ?? [],
         }
       : EMPTY_FORM
   );
@@ -118,8 +179,18 @@ function ProductModal({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const set = (field: keyof Omit<ProductFormData, "images" | "inventory">, value: string | number) =>
-    setForm((f) => ({ ...f, [field]: value }));
+  const set = (
+    field: keyof Omit<ProductFormData, "images" | "inventory" | "collectionIds">,
+    value: string | number
+  ) => setForm((f) => ({ ...f, [field]: value }));
+
+  const toggleCollection = (collectionId: number) =>
+    setForm((f) => ({
+      ...f,
+      collectionIds: f.collectionIds.includes(collectionId)
+        ? f.collectionIds.filter((id) => id !== collectionId)
+        : [...f.collectionIds, collectionId],
+    }));
 
   // ── Image handlers ──────────────────────────────────────────
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,6 +257,16 @@ function ProductModal({
       ),
     }));
 
+  const blurInventorySize = (index: number) =>
+    setForm((f) => ({
+      ...f,
+      inventory: f.inventory.map((row, i) =>
+        i === index
+          ? { ...row, size: row.size.trim().replace(/\s+/g, " ").toUpperCase() }
+          : row
+      ),
+    }));
+
   // ── Submit ──────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,6 +288,8 @@ function ProductModal({
 
   const hasInventory = form.inventory.length > 0;
   const inventoryTotal = form.inventory.reduce((s, r) => s + (r.stock || 0), 0);
+  const categories = categoryOptions(products);
+  const subcategories = subcategoryOptions(products, form.category);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end">
@@ -264,23 +347,65 @@ function ProductModal({
             <Field label="Category *">
               <input
                 type="text"
+                list="admin-category-options"
                 value={form.category}
                 onChange={(e) => set("category", e.target.value)}
                 className={INPUT}
                 placeholder="e.g. Tops"
                 required
               />
+              <datalist id="admin-category-options">
+                {categories.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </Field>
             <Field label="Subcategory">
               <input
                 type="text"
+                list="admin-subcategory-options"
                 value={form.subcategory ?? ""}
                 onChange={(e) => set("subcategory", e.target.value)}
                 className={INPUT}
                 placeholder="e.g. T-Shirts"
               />
+              <datalist id="admin-subcategory-options">
+                {subcategories.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </Field>
           </div>
+
+          <Field label="Collections">
+            {collections.length === 0 ? (
+              <p className="text-xs text-gray-400">
+                No collections yet. Create one under Collections.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-gray-100 rounded p-2">
+                {collections.map((collection) => (
+                  <label
+                    key={collection.id}
+                    className="flex items-center gap-2 text-sm text-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.collectionIds.includes(collection.id)}
+                      onChange={() => toggleCollection(collection.id)}
+                      className="rounded border-gray-300"
+                    />
+                    <span>{collection.name}</span>
+                    {collection.isFeatured && (
+                      <span className="text-[10px] uppercase tracking-wider text-[#A78BFA]">
+                        Featured
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+          </Field>
 
           {/* Fabric & Care */}
           <Field label="Fabric">
@@ -315,6 +440,11 @@ function ProductModal({
 
           {/* Inventory by Size & Color */}
           <Field label="Inventory by Size & Color">
+            <datalist id="admin-size-options">
+              {["XS", "S", "M", "L", "XL", "XXL", "ONE SIZE"].map((size) => (
+                <option key={size} value={size} />
+              ))}
+            </datalist>
             {hasInventory ? (
               <div className="flex flex-col gap-2">
                 {/* Column headers */}
@@ -332,8 +462,10 @@ function ProductModal({
                       type="text"
                       value={row.size}
                       onChange={(e) => updateInventoryRow(i, "size", e.target.value)}
+                      onBlur={() => blurInventorySize(i)}
                       className={INPUT}
                       placeholder="e.g. M"
+                      list="admin-size-options"
                     />
                     <input
                       type="text"
@@ -477,14 +609,30 @@ const INPUT =
 
 const AdminProducts = () => {
   const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [collections, setCollections] = useState<
+    Array<{ id: number; name: string; isFeatured: boolean }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [modalProduct, setModalProduct] = useState<AdminProduct | null | undefined>(undefined);
 
   const fetchProducts = useCallback(() => {
     setLoading(true);
-    adminFetch
-      .get<AdminProduct[]>("/products")
-      .then((res) => setProducts(res.data))
+    Promise.all([
+      adminFetch.get<AdminProduct[]>("/products"),
+      adminFetch.get<Array<{ id: number; name: string; isFeatured: boolean }>>(
+        "/collections"
+      ),
+    ])
+      .then(([productsRes, collectionsRes]) => {
+        setProducts(productsRes.data);
+        setCollections(
+          collectionsRes.data.map((c) => ({
+            id: c.id,
+            name: c.name,
+            isFeatured: c.isFeatured,
+          }))
+        );
+      })
       .catch(() => toast.error("Failed to load products"))
       .finally(() => setLoading(false));
   }, []);
@@ -616,6 +764,8 @@ const AdminProducts = () => {
       {modalProduct !== undefined && (
         <ProductModal
           product={modalProduct}
+          products={products}
+          collections={collections}
           onClose={() => setModalProduct(undefined)}
           onSave={handleSave}
         />

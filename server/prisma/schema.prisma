@@ -43,6 +43,30 @@ model Product {
   createdAt DateTime @default(now())
 
   orderItems OrderItem[]
+  collections CollectionProduct[]
+}
+
+model Collection {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  products CollectionProduct[]
+}
+
+model CollectionProduct {
+  id           Int @id @default(autoincrement())
+  collectionId Int
+  productId    Int
+  sortOrder    Int @default(0)
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, productId])
 }
 
 model Order {

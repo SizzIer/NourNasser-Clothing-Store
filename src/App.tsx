@@ -1,12 +1,14 @@
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import {
   AdminCustomers,
+  AdminCollections,
   AdminDashboard,
   AdminLayout,
   AdminOrders,
   AdminProducts,
   Cart,
   Checkout,
+  Collection,
   HomeLayout,
   Landing,
   Login,
@@ -32,6 +34,7 @@ const router = createBrowserRouter([
       { index: true, element: <AdminDashboard /> },
       { path: "orders", element: <AdminOrders /> },
       { path: "products", element: <AdminProducts /> },
+      { path: "collections", element: <AdminCollections /> },
       { path: "customers", element: <AdminCustomers /> },
     ],
   },
@@ -52,6 +55,10 @@ const router = createBrowserRouter([
         path: "shop/:category",
         element: <Shop />,
         loader: shopCategoryLoader,
+      },
+      {
+        path: "collection/:slug",
+        element: <Collection />,
       },
       {
         path: "product/:id",

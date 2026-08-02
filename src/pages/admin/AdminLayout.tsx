@@ -8,12 +8,14 @@ import {
   FiArrowLeft,
   FiMenu,
   FiLogOut,
+  FiLayers,
 } from "react-icons/fi";
 
  const NAV_ITEMS = [
   { to: "/admin", label: "Dashboard", icon: FiGrid, end: true },
    { to: "/admin/orders", label: "Orders", icon: FiShoppingBag, end: false },
    { to: "/admin/products", label: "Products", icon: FiBox, end: false },
+   { to: "/admin/collections", label: "Collections", icon: FiLayers, end: false },
    { to: "/admin/customers", label: "Customers", icon: FiUsers, end: false },
  ];
 

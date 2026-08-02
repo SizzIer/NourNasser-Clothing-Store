@@ -23,6 +23,8 @@ const ProductGrid = React.memo(function ProductGrid({
             price={product.price}
             popularity={product.popularity}
             stock={product.stock}
+            description={product.description}
+            inventory={product.inventory}
           />
         ))}
     </div>

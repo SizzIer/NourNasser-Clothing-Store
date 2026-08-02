@@ -542,6 +542,8 @@ const SingleProduct = () => {
                 price={product.price}
                 popularity={product.popularity}
                 stock={product.stock}
+                description={product.description}
+                inventory={product.inventory}
               />
             ))}
         </div>

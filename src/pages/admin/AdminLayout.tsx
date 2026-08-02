@@ -7,7 +7,6 @@ import {
   FiUsers,
   FiArrowLeft,
   FiMenu,
-  FiX,
   FiLogOut,
 } from "react-icons/fi";
 

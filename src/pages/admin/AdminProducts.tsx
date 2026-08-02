@@ -4,6 +4,8 @@ import adminFetch from "../../axios/adminFetch";
 import toast from "react-hot-toast";
 
 const MAX_IMAGES = 10;
+const FABRIC_MAX_LENGTH = 100;
+const CARE_MAX_LENGTH = 300;
 
 interface InventoryRow {
   size: string;
@@ -22,6 +24,7 @@ interface AdminProduct {
   category: string;
   subcategory: string | null;
   fabric: string | null;
+  careInstructions: string | null;
   stock: number;
   createdAt: string;
 }
@@ -36,6 +39,7 @@ interface ProductFormData {
   category: string;
   subcategory: string;
   fabric: string;
+  careInstructions: string;
   stock: number;
 }
 
@@ -49,6 +53,7 @@ const EMPTY_FORM: ProductFormData = {
   category: "",
   subcategory: "",
   fabric: "",
+  careInstructions: "",
   stock: 0,
 };
 
@@ -104,6 +109,7 @@ function ProductModal({
           category: product.category,
           subcategory: product.subcategory ?? "",
           fabric: product.fabric ?? "",
+          careInstructions: product.careInstructions ?? "",
           stock: product.stock,
         }
       : EMPTY_FORM
@@ -240,31 +246,18 @@ function ProductModal({
             />
           </Field>
 
-          {/* Price + Stock (Stock hidden when inventory rows exist) */}
-          <div className={`grid gap-4 ${hasInventory ? "grid-cols-1" : "grid-cols-2"}`}>
-            <Field label="Price ($) *">
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={form.price}
-                onChange={(e) => set("price", parseFloat(e.target.value) || 0)}
-                className={INPUT}
-                required
-              />
-            </Field>
-            {!hasInventory && (
-              <Field label="Stock">
-                <input
-                  type="number"
-                  min={0}
-                  value={form.stock}
-                  onChange={(e) => set("stock", parseInt(e.target.value, 10) || 0)}
-                  className={INPUT}
-                />
-              </Field>
-            )}
-          </div>
+          {/* Price */}
+          <Field label="Price ($) *">
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={form.price}
+              onChange={(e) => set("price", parseFloat(e.target.value) || 0)}
+              className={INPUT}
+              required
+            />
+          </Field>
 
           {/* Category + Subcategory */}
           <div className="grid grid-cols-2 gap-4">
@@ -289,15 +282,35 @@ function ProductModal({
             </Field>
           </div>
 
-          {/* Fabric */}
+          {/* Fabric & Care */}
           <Field label="Fabric">
-            <input
-              type="text"
+            <textarea
               value={form.fabric ?? ""}
-              onChange={(e) => set("fabric", e.target.value)}
-              className={INPUT}
+              onChange={(e) => set("fabric", e.target.value.slice(0, FABRIC_MAX_LENGTH))}
+              maxLength={FABRIC_MAX_LENGTH}
+              rows={2}
+              className={`${INPUT} resize-none`}
               placeholder="e.g. 100% Organic Cotton"
             />
+            <p className="text-[10px] text-gray-400 text-right">
+              {(form.fabric ?? "").length}/{FABRIC_MAX_LENGTH}
+            </p>
+          </Field>
+
+          <Field label="Care Instructions">
+            <textarea
+              value={form.careInstructions ?? ""}
+              onChange={(e) =>
+                set("careInstructions", e.target.value.slice(0, CARE_MAX_LENGTH))
+              }
+              maxLength={CARE_MAX_LENGTH}
+              rows={4}
+              className={`${INPUT} resize-none`}
+              placeholder="e.g. Machine wash cold, tumble dry low"
+            />
+            <p className="text-[10px] text-gray-400 text-right">
+              {(form.careInstructions ?? "").length}/{CARE_MAX_LENGTH}
+            </p>
           </Field>
 
           {/* Inventory by Size & Color */}
@@ -373,13 +386,8 @@ function ProductModal({
                 className="flex items-center gap-2 w-full px-3 py-2.5 border-2 border-dashed border-gray-200 rounded text-xs text-gray-400 hover:border-[#A78BFA] hover:text-[#A78BFA] justify-center transition-colors"
               >
                 <FiPlus size={14} />
-                Track stock by size &amp; color
+                Add size &amp; color
               </button>
-            )}
-            {hasInventory && (
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                Stock field is auto-calculated from the rows above.
-              </p>
             )}
           </Field>
 

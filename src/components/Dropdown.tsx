@@ -51,7 +51,7 @@ const Dropdown = ({
       </button>
       {isOpen && (
         <div className="mt-4">
-          <p className="text-sm">{children}</p>
+          <div className="text-sm break-words">{children}</div>
         </div>
       )}
     </div>

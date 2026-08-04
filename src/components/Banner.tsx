@@ -9,25 +9,22 @@ type FeaturedCollection = {
 
 const Banner = () => {
   const [featuredSlug, setFeaturedSlug] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     customFetch
       .get<FeaturedCollection | null>("/collections/featured")
       .then((res) => {
         const data = res.data;
-        // Match home grid: only deep-link when the featured drop has products.
         if (data?.slug && Array.isArray(data.products) && data.products.length > 0) {
           setFeaturedSlug(data.slug);
         } else {
           setFeaturedSlug(null);
         }
       })
-      .catch(() => setFeaturedSlug(null));
+      .catch(() => setFeaturedSlug(null))
+      .finally(() => setLoaded(true));
   }, []);
-
-  const collectionHref = featuredSlug
-    ? `/collection/${featuredSlug}`
-    : "#our-collection";
 
   return (
     <div className="banner w-full flex flex-col justify-end items-center max-sm:h-[550px] max-sm:gap-2">
@@ -44,12 +41,14 @@ const Banner = () => {
         >
           Shop Now
         </Link>
-        <Link
-          to={collectionHref}
-          className="text-white border-white border-2 text-center text-xl font-normal tracking-[0.6px] leading-[72px] w-full h-12 flex items-center justify-center"
-        >
-          See Collection
-        </Link>
+        {loaded && featuredSlug ? (
+          <Link
+            to={`/collection/${featuredSlug}`}
+            className="text-white border-white border-2 text-center text-xl font-normal tracking-[0.6px] leading-[72px] w-full h-12 flex items-center justify-center"
+          >
+            See Collection
+          </Link>
+        ) : null}
       </div>
     </div>
   );
